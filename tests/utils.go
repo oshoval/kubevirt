@@ -2679,6 +2679,30 @@ func configureIPv6OnVMI(vmi *v1.VirtualMachineInstance, expecter expect.Expecter
 		return err == nil
 	}
 
+	ipv6Exist := func(vmi *v1.VirtualMachineInstance) bool {
+		ipv6ExistBatch := append([]expect.Batcher{
+			&expect.BSnd{S: "\n"},
+			&expect.BExp{R: "\\$ "},
+			&expect.BSnd{S: "ip address show dev eth0 scope global | grep inet6\n"},
+			&expect.BExp{R: "\\$ "},
+			&expect.BSnd{S: "echo $?\n"},
+			&expect.BExp{R: "0"}})
+		_, err := expecter.ExpectBatch(ipv6ExistBatch, 30*time.Second)
+		return err == nil
+	}
+
+	ipv6RouteExist := func(vmi *v1.VirtualMachineInstance) bool {
+		ipv6RouteExistBatch := append([]expect.Batcher{
+			&expect.BSnd{S: "\n"},
+			&expect.BExp{R: "\\$ "},
+			&expect.BSnd{S: "ip -6 route | grep default | grep via | grep src\n"},
+			&expect.BExp{R: "\\$ "},
+			&expect.BSnd{S: "echo $?\n"},
+			&expect.BExp{R: "0"}})
+		_, err := expecter.ExpectBatch(ipv6RouteExistBatch, 30*time.Second)
+		return err == nil
+	}
+
 	if (vmi.Status.Interfaces == nil || len(vmi.Status.Interfaces) == 0 || !netutils.IsIPv6String(vmi.Status.Interfaces[0].IP)) ||
 		(vmi.Spec.Domain.Devices.Interfaces == nil || len(vmi.Spec.Domain.Devices.Interfaces) == 0 || vmi.Spec.Domain.Devices.Interfaces[0].InterfaceBindingMethod.Masquerade == nil) ||
 		(vmi.Spec.Domain.Devices.AutoattachPodInterface != nil && !*vmi.Spec.Domain.Devices.AutoattachPodInterface) ||
@@ -2686,24 +2710,41 @@ func configureIPv6OnVMI(vmi *v1.VirtualMachineInstance, expecter expect.Expecter
 		return nil
 	}
 
-	ipv6Batch := append([]expect.Batcher{
-		&expect.BSnd{S: "\n"},
-		&expect.BExp{R: "\\$ "},
-		&expect.BSnd{S: "sudo ip -6 addr add fd2e:f1fe:9490:a8ff::2/120 dev eth0\n"},
-		&expect.BExp{R: "\\$ "},
-		&expect.BSnd{S: "sleep 5\n"},
-		&expect.BExp{R: "\\$ "},
-		&expect.BSnd{S: "sudo ip -6 route add default via fd2e:f1fe:9490:a8ff::1 src fd2e:f1fe:9490:a8ff::2\n"},
-		&expect.BExp{R: "\\$ "},
-		&expect.BSnd{S: "echo $?\n"},
-		&expect.BExp{R: "0"}})
-	resp, err := expecter.ExpectBatch(ipv6Batch, 30*time.Second)
+	if !ipv6Exist(vmi) {
+		ipv6AddrBatch := append([]expect.Batcher{
+			&expect.BSnd{S: "\n"},
+			&expect.BExp{R: "\\$ "},
+			&expect.BSnd{S: "sudo ip -6 addr add fd2e:f1fe:9490:a8ff::2/120 dev eth0\n"},
+			&expect.BExp{R: "\\$ "},
+			&expect.BSnd{S: "echo $?\n"},
+			&expect.BExp{R: "0"}},
+			&expect.BSnd{S: "sleep 5\n"},
+			&expect.BExp{R: "\\$ "})
+		resp, err := expecter.ExpectBatch(ipv6AddrBatch, 30*time.Second)
 
-	if err != nil {
-		log.DefaultLogger().Object(vmi).Infof("Configure ipv6: %v", resp)
-		expecter.Close()
+		if err != nil {
+			log.DefaultLogger().Object(vmi).Infof("Configure ipv6: %v", resp)
+			expecter.Close()
+		}
 	}
-	return err
+
+	if !ipv6RouteExist(vmi) {
+		ipv6Batch := append([]expect.Batcher{
+			&expect.BSnd{S: "\n"},
+			&expect.BExp{R: "\\$ "},
+			&expect.BSnd{S: "sudo ip -6 route add default via fd2e:f1fe:9490:a8ff::1 src fd2e:f1fe:9490:a8ff::2\n"},
+			&expect.BExp{R: "\\$ "},
+			&expect.BSnd{S: "echo $?\n"},
+			&expect.BExp{R: "0"}})
+		resp, err := expecter.ExpectBatch(ipv6Batch, 30*time.Second)
+
+		if err != nil {
+			log.DefaultLogger().Object(vmi).Infof("Configure ipv6: %v", resp)
+			expecter.Close()
+		}
+	}
+
+	return nil
 }
 
 func LoggedInCirrosExpecter(vmi *v1.VirtualMachineInstance) (expect.Expecter, error) {

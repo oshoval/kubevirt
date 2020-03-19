@@ -116,10 +116,10 @@ func init() {
 	flag.StringVar(&KubeVirtUtilityVersionTag, "utility-container-tag", "", "Set the image tag or digest to use")
 	flag.StringVar(&KubeVirtVersionTag, "container-tag", "latest", "Set the image tag or digest to use")
 	flag.StringVar(&KubeVirtVersionTagAlt, "container-tag-alt", "", "An alternate tag that can be used to test operator deployments")
-	flag.StringVar(&KubeVirtUtilityRepoPrefix, "utility-container-prefix", "", "Set the repository prefix for all images")
-	flag.StringVar(&KubeVirtRepoPrefix, "container-prefix", "kubevirt", "Set the repository prefix for all images")
-	flag.StringVar(&ImagePrefixAlt, "image-prefix-alt", "", "Optional prefix for virt-* image names for additional imagePrefix operator test")
-	flag.StringVar(&ContainerizedDataImporterNamespace, "cdi-namespace", "cdi", "Set the repository prefix for CDI components")
+	flag.StringVar(&KubeVirtUtilityRepoPrefix, "utility-container-prefix", "", "Set the repository Prefix for all images")
+	flag.StringVar(&KubeVirtRepoPrefix, "container-prefix", "kubevirt", "Set the repository Prefix for all images")
+	flag.StringVar(&ImagePrefixAlt, "image-prefix-alt", "", "Optional Prefix for virt-* image names for additional imagePrefix operator test")
+	flag.StringVar(&ContainerizedDataImporterNamespace, "cdi-namespace", "cdi", "Set the repository Prefix for CDI components")
 	flag.StringVar(&KubeVirtKubectlPath, "kubectl-path", "", "Set path to kubectl binary")
 	flag.StringVar(&KubeVirtOcPath, "oc-path", "", "Set path to oc binary")
 	flag.StringVar(&KubeVirtVirtctlPath, "virtctl-path", "", "Set path to virtctl binary")
@@ -136,7 +136,7 @@ func init() {
 func FlagParse() {
 	flag.Parse()
 
-	// When the flags are not provided, copy the values from normal version tag and prefix
+	// When the flags are not provided, copy the values from normal version tag and Prefix
 	if KubeVirtUtilityVersionTag == "" {
 		KubeVirtUtilityVersionTag = KubeVirtVersionTag
 	}
@@ -265,6 +265,17 @@ type ObjectEventWatcher struct {
 	resourceVersion        string
 	startType              startType
 	dontFailOnMissingEvent bool
+}
+
+type Ipv6UserData struct {
+	Address    string
+	Prefix     string
+	Gateway    string
+	Nameserver string
+}
+
+func (userData Ipv6UserData) ipAddressWithPrefix() string {
+	return fmt.Sprintf("%s/%s", userData.Address, userData.Prefix)
 }
 
 func NewObjectEventWatcher(object runtime.Object) *ObjectEventWatcher {
@@ -1716,7 +1727,7 @@ func NewRandomVMIWithNS(namespace string) *v1.VirtualMachineInstance {
 	t := defaultTestGracePeriod
 	vmi.Spec.TerminationGracePeriodSeconds = &t
 
-	// To avoid mac address issue in the tests change the pod interface binding to masquerade
+	// To avoid mac Address issue in the tests change the pod interface binding to masquerade
 	// https://github.com/kubevirt/kubevirt/issues/1494
 	vmi.Spec.Domain.Devices = v1.Devices{Interfaces: []v1.Interface{{Name: "default",
 		InterfaceBindingMethod: v1.InterfaceBindingMethod{
@@ -1918,7 +1929,13 @@ func AddEphemeralCdrom(vmi *v1.VirtualMachineInstance, name string, bus string, 
 }
 
 func NewRandomFedoraVMIWitGuestAgent() *v1.VirtualMachineInstance {
-	agentVMI := NewRandomVMIWithEphemeralDiskAndUserdata(ContainerDiskFor(ContainerDiskFedora), GetGuestAgentUserData())
+	agentVMI := NewRandomVMIWithEphemeralDiskAndUserdata(ContainerDiskFor(ContainerDiskFedora), GetGuestAgentUserData(nil))
+	agentVMI.Spec.Domain.Resources.Requests[k8sv1.ResourceMemory] = resource.MustParse("512M")
+	return agentVMI
+}
+
+func NewRandomFedoraVMIWitIpv6GuestAgent(ipv6Data *Ipv6UserData) *v1.VirtualMachineInstance {
+	agentVMI := NewRandomVMIWithEphemeralDiskAndUserdata(ContainerDiskFor(ContainerDiskFedora), GetGuestAgentUserData(ipv6Data))
 	agentVMI.Spec.Domain.Resources.Requests[k8sv1.ResourceMemory] = resource.MustParse("512M")
 	return agentVMI
 }
@@ -1934,9 +1951,20 @@ func NewRandomFedoraVMIWithDmidecode() *v1.VirtualMachineInstance {
 	return vmi
 }
 
-func GetGuestAgentUserData() string {
+func GetGuestAgentUserData(ipv6Data *Ipv6UserData) string {
+	var ipv6UserDataString string
+	if ipv6Data != nil {
+		ipv6UserDataString = fmt.Sprintf(`ip -6 addr add %s dev eth0
+               sudo ip -6 route add default via %s src %s
+               echo "nameserver %s" >> /etc/resolv.conf
+				`, ipv6Data.ipAddressWithPrefix(), ipv6Data.Gateway, ipv6Data.Address, ipv6Data.Nameserver)
+	} else {
+		ipv6UserDataString = ""
+	}
+
 	return fmt.Sprintf(`#!/bin/bash
                 echo "fedora" |passwd fedora --stdin
+                %s
                 mkdir -p /usr/local/bin
                 curl %s > /usr/local/bin/qemu-ga
                 chmod +x /usr/local/bin/qemu-ga
@@ -1944,7 +1972,7 @@ func GetGuestAgentUserData() string {
                 chmod +x /usr/local/bin/stress
                 setenforce 0
                 systemd-run --unit=guestagent /usr/local/bin/qemu-ga
-                `, GuestAgentHttpUrl, StressHttpUrl)
+                `, ipv6UserDataString, GuestAgentHttpUrl, StressHttpUrl)
 }
 
 func NewRandomVMIWithEphemeralDiskAndUserdata(containerImage string, userData string) *v1.VirtualMachineInstance {
@@ -3604,7 +3632,7 @@ func NewHelloWorldJobUDP(host string, port string) *k8sv1.Pod {
 	return job
 }
 
-// NewHelloWorldJobHttp gets an IP address and a port, which it uses to create a pod.
+// NewHelloWorldJobHttp gets an IP Address and a port, which it uses to create a pod.
 // This pod tries to contact the host on the provided port, over HTTP.
 // On success - it expects to receive "Hello World!".
 func NewHelloWorldJobHttp(host string, port string) *k8sv1.Pod {
@@ -4229,7 +4257,7 @@ func RetryIfModified(do func() error) (err error) {
 }
 
 func GenerateRandomMac() (net.HardwareAddr, error) {
-	prefix := []byte{0x02, 0x00, 0x00} // local unicast prefix
+	prefix := []byte{0x02, 0x00, 0x00} // local unicast Prefix
 	suffix := make([]byte, 3)
 	_, err := cryptorand.Read(suffix)
 	if err != nil {

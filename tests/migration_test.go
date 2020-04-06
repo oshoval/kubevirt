@@ -232,7 +232,7 @@ var _ = Describe("[rfe_id:393][crit:high][vendor:cnv-qe@redhat.com][level:system
 			migration, err = virtClient.VirtualMachineInstanceMigration(migration.Namespace).Create(migration)
 			return err
 		}, timeout, 1*time.Second).ShouldNot(HaveOccurred())
-		By("Waiting until the Migration Completes")
+		By("Waiting until the Migration Completes zzz")
 
 		uid := ""
 		Eventually(func() error {
@@ -388,9 +388,7 @@ var _ = Describe("[rfe_id:393][crit:high][vendor:cnv-qe@redhat.com][level:system
 			})
 		})
 		Context("with a Cirros disk", func() {
-			It("should be successfully migrate with cloud-init disk with devices on the root bus", func() {
-				tests.SkipMigrationTestIfRunnigOnKindInfra()
-
+			It("[test_id:3227]should be successfully migrate with cloud-init disk with devices on the root bus", func() {
 				vmi := tests.NewRandomVMIWithEphemeralDisk(tests.ContainerDiskFor(tests.ContainerDiskCirros))
 				vmi.Annotations = map[string]string{
 					v1.PlacePCIDevicesOnRootComplex: "true",
@@ -433,8 +431,6 @@ var _ = Describe("[rfe_id:393][crit:high][vendor:cnv-qe@redhat.com][level:system
 			})
 
 			It("[test_id:1783]should be successfully migrated multiple times with cloud-init disk", func() {
-				tests.SkipMigrationTestIfRunnigOnKindInfra()
-
 				vmi := tests.NewRandomVMIWithEphemeralDisk(tests.ContainerDiskFor(tests.ContainerDiskCirros))
 				tests.AddUserData(vmi, "cloud-init", "#!/bin/bash\necho 'hello'\n")
 
@@ -487,8 +483,6 @@ var _ = Describe("[rfe_id:393][crit:high][vendor:cnv-qe@redhat.com][level:system
 			})
 
 			It("[test_id:3237]should complete a migration", func() {
-				tests.SkipMigrationTestIfRunnigOnKindInfra()
-
 				vmi := tests.NewRandomFedoraVMIWitGuestAgent()
 				vmi.Spec.Domain.Resources.Requests[k8sv1.ResourceMemory] = resource.MustParse(fedoraVMSize)
 
@@ -663,8 +657,6 @@ var _ = Describe("[rfe_id:393][crit:high][vendor:cnv-qe@redhat.com][level:system
 				}
 			})
 			It("[test_id:3239]should reject a migration of a vmi with a non-shared data volume", func() {
-				tests.SkipMigrationTestIfRunnigOnKindInfra()
-
 				dataVolume := tests.NewRandomDataVolumeWithHttpImport(tests.GetUrl(tests.AlpineHttpUrl), tests.NamespaceTestDefault, k8sv1.ReadWriteOnce)
 				vmi := tests.NewRandomVMIWithDataVolume(dataVolume.Name)
 
@@ -856,7 +848,6 @@ var _ = Describe("[rfe_id:393][crit:high][vendor:cnv-qe@redhat.com][level:system
 			var pvName string
 			var vmi *v1.VirtualMachineInstance
 			BeforeEach(func() {
-				tests.SkipMigrationTestIfRunnigOnKindInfra()
 				pvName = "test-nfs" + rand.String(48)
 				// Prepare a NFS backed PV
 				By("Starting an NFS POD")
@@ -881,7 +872,7 @@ var _ = Describe("[rfe_id:393][crit:high][vendor:cnv-qe@redhat.com][level:system
 				By("Waiting for NFS pod to disappear")
 				tests.WaitForPodToDisappearWithTimeout(tests.NFSTargetName, 120)
 			})
-			It("[test_id:2653]  should be migrated successfully, using guest agent on VM", func() {
+			PIt("[test_id:2653]  should be migrated successfully, using guest agent on VM", func() {
 				// Start the VirtualMachineInstance with the PVC attached
 				By("Creating the  VMI")
 				vmi = tests.NewRandomVMIWithPVC(pvName)
@@ -1184,8 +1175,6 @@ var _ = Describe("[rfe_id:393][crit:high][vendor:cnv-qe@redhat.com][level:system
 			}
 
 			table.DescribeTable("should be able to cancel a migration", func(createVMI vmiBuilder) {
-				tests.SkipMigrationTestIfRunnigOnKindInfra()
-
 				vmi, dv := createVMI()
 				vmi.Spec.Domain.Resources.Requests[k8sv1.ResourceMemory] = resource.MustParse(fedoraVMSize)
 				defer deleteDataVolume(dv)
@@ -1227,8 +1216,6 @@ var _ = Describe("[rfe_id:393][crit:high][vendor:cnv-qe@redhat.com][level:system
 				table.Entry("[test_id:2731]with OCS Disk", newVirtualMachineInstanceWithFedoraOCSDisk),
 			)
 			It("[test_id:3241]should be able to cancel a migration right after posting it", func() {
-				tests.SkipMigrationTestIfRunnigOnKindInfra()
-
 				vmi := tests.NewRandomFedoraVMIWitGuestAgent()
 				vmi.Spec.Domain.Resources.Requests[k8sv1.ResourceMemory] = resource.MustParse(fedoraVMSize)
 
@@ -1266,8 +1253,6 @@ var _ = Describe("[rfe_id:393][crit:high][vendor:cnv-qe@redhat.com][level:system
 	Context("with sata disks", func() {
 
 		It("[test_id:1853]VM with containerDisk + CloudInit + ServiceAccount + ConfigMap + Secret", func() {
-			tests.SkipMigrationTestIfRunnigOnKindInfra()
-
 			configMapName := "configmap-" + rand.String(5)
 			secretName := "secret-" + rand.String(5)
 
@@ -1357,8 +1342,6 @@ var _ = Describe("[rfe_id:393][crit:high][vendor:cnv-qe@redhat.com][level:system
 			})
 
 			It("[test_id:3244]should block the eviction api while a slow migration is in progress", func() {
-				tests.SkipMigrationTestIfRunnigOnKindInfra()
-
 				vmi = fedoraVMIWithEvictionStrategy()
 
 				By("Starting the VirtualMachineInstance")
@@ -1414,7 +1397,6 @@ var _ = Describe("[rfe_id:393][crit:high][vendor:cnv-qe@redhat.com][level:system
 
 			Context("with node tainted during node drain", func() {
 				It("[test_id:2221] should migrate a VMI under load to another node", func() {
-					tests.SkipMigrationTestIfRunnigOnKindInfra()
 					tests.SkipIfVersionBelow("Eviction of completed pods requires v1.13 and above", "1.13")
 
 					vmi = fedoraVMIWithEvictionStrategy()
@@ -1467,7 +1449,6 @@ var _ = Describe("[rfe_id:393][crit:high][vendor:cnv-qe@redhat.com][level:system
 				})
 
 				It("[test_id:2222] should migrate a VMI when custom taint key is configured", func() {
-					tests.SkipMigrationTestIfRunnigOnKindInfra()
 					tests.SkipIfVersionBelow("Eviction of completed pods requires v1.13 and above", "1.13")
 
 					vmi = cirrosVMIWithEvictionStrategy()
@@ -1522,7 +1503,6 @@ var _ = Describe("[rfe_id:393][crit:high][vendor:cnv-qe@redhat.com][level:system
 				}, 400)
 
 				It("[test_id:2224] should handle mixture of VMs with different eviction strategies.", func() {
-					tests.SkipMigrationTestIfRunnigOnKindInfra()
 					tests.SkipIfVersionBelow("Eviction of completed pods requires v1.13 and above", "1.13")
 
 					vmi_evict1 := cirrosVMIWithEvictionStrategy()
@@ -1646,8 +1626,6 @@ var _ = Describe("[rfe_id:393][crit:high][vendor:cnv-qe@redhat.com][level:system
 		Context("with multiple VMIs with eviction policies set", func() {
 
 			It("[test_id:3245]should not migrate more than two VMIs at the same time from a node", func() {
-				tests.SkipMigrationTestIfRunnigOnKindInfra()
-
 				var vmis []*v1.VirtualMachineInstance
 				for i := 0; i < 4; i++ {
 					vmi := cirrosVMIWithEvictionStrategy()

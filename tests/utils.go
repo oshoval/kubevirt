@@ -57,6 +57,7 @@ import (
 	autoscalingv1 "k8s.io/api/autoscaling/v1"
 	k8sv1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
+	settingsv1alpha1 "k8s.io/api/settings/v1alpha1"
 	storagev1 "k8s.io/api/storage/v1"
 	extclient "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -757,6 +758,10 @@ func BeforeTestSuitSetup() {
 	CreatePVC(osWindows, defaultWindowsDiskSize, Config.StorageClassWindows)
 	CreatePVC(osRhel, defaultRhelDiskSize, Config.StorageClassRhel)
 
+	if IsRunningOnKindInfraIPv6() {
+		createPodPreset("fix-node-uuid")
+	}
+
 	EnsureKVMPresent()
 
 	SetDefaultEventuallyTimeout(defaultEventuallyTimeout)
@@ -1217,6 +1222,48 @@ func cleanupSubresourceServiceAccount() {
 
 	err = virtCli.RbacV1().ClusterRoleBindings().Delete(SubresourceServiceAccountName, nil)
 	if !errors.IsNotFound(err) {
+		PanicOnError(err)
+	}
+}
+
+func createPodPreset(ppName string) {
+	virtCli, err := kubecli.GetKubevirtClient()
+	PanicOnError(err)
+
+	hostPathType := k8sv1.HostPathFile
+	pp := settingsv1alpha1.PodPreset{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      ppName,
+			Namespace: NamespaceTestDefault,
+		},
+		Spec: settingsv1alpha1.PodPresetSpec{
+			Selector: metav1.LabelSelector{
+				MatchLabels: map[string]string{
+					"kubevirt.io": "virt-launcher",
+				},
+			},
+			Volumes: []k8sv1.Volume{
+				{
+					Name: "fake-product-uuid",
+					VolumeSource: k8sv1.VolumeSource{
+						HostPath: &k8sv1.HostPathVolumeSource{
+							Path: "/kind/product_uuid",
+							Type: &hostPathType,
+						},
+					},
+				},
+			},
+			VolumeMounts: []k8sv1.VolumeMount{
+				{
+					Name:      "fake-product-uuid",
+					MountPath: "/sys/class/dmi/id/product_uuid",
+				},
+			},
+		},
+	}
+
+	_, err = virtCli.SettingsV1alpha1().PodPresets(NamespaceTestDefault).Create(&pp)
+	if !errors.IsAlreadyExists(err) {
 		PanicOnError(err)
 	}
 }
@@ -4535,15 +4582,14 @@ func IsRunningOnKindInfra() bool {
 	return strings.HasPrefix(provider, "kind")
 }
 
+func IsRunningOnKindInfraIPv6() bool {
+	provider := os.Getenv("KUBEVIRT_PROVIDER")
+	return strings.HasPrefix(provider, "kind-k8s-1.17.0-ipv6")
+}
+
 func SkipPVCTestIfRunnigOnKindInfra() {
 	if IsRunningOnKindInfra() {
 		Skip("Skip PVC tests till PR https://github.com/kubevirt/kubevirt/pull/3171 is merged")
-	}
-}
-
-func SkipMigrationTestIfRunnigOnKindInfra() {
-	if IsRunningOnKindInfra() {
-		Skip("Skip migration tests till PR https://github.com/kubevirt/kubevirt/pull/3221 is merged")
 	}
 }
 

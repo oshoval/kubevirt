@@ -369,6 +369,7 @@ func (t *templateService) RenderLaunchManifest(vmi *v1.VirtualMachineInstance) (
 			},
 		})
 	}
+
 	serviceAccountName := ""
 
 	for _, volume := range vmi.Spec.Volumes {

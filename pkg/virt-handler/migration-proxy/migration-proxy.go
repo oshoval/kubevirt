@@ -29,6 +29,8 @@ import (
 	"strings"
 	"sync"
 
+	netutils "k8s.io/utils/net"
+
 	"kubevirt.io/client-go/log"
 )
 
@@ -95,6 +97,16 @@ func SourceUnixFile(virtShareDir string, key string) string {
 	return filepath.Join(virtShareDir, "migrationproxy", key+"-source.sock")
 }
 
+func ipAnyAddress() string {
+	ipString := os.Getenv("MY_POD_IP")
+	if netutils.IsIPv6String(ipString) {
+		return "[::]"
+	}
+
+	// TODO in case env is "" do we want to return error or to fallback to IPv4 ?
+	return "0.0.0.0"
+}
+
 func (m *migrationProxyManager) StartTargetListener(key string, targetUnixFiles []string) error {
 	m.managerLock.Lock()
 	defer m.managerLock.Unlock()
@@ -131,7 +143,7 @@ func (m *migrationProxyManager) StartTargetListener(key string, targetUnixFiles 
 	proxiesList := []*migrationProxy{}
 	for _, targetUnixFile := range targetUnixFiles {
 		// 0 means random port is used
-		proxy := NewTargetProxy("0.0.0.0", 0, m.serverTLSConfig, m.clientTLSConfig, targetUnixFile)
+		proxy := NewTargetProxy(ipAnyAddress(), 0, m.serverTLSConfig, m.clientTLSConfig, targetUnixFile)
 
 		err := proxy.StartListening()
 		if err != nil {
@@ -324,7 +336,7 @@ func (m *migrationProxy) createTcpListener() error {
 	var err error
 	if m.serverTLSConfig != nil {
 		listener, err = tls.Listen("tcp", fmt.Sprintf("%s:%d", m.tcpBindAddress, m.tcpBindPort), m.serverTLSConfig)
-	} else if strings.Contains(m.tcpBindAddress, "127.0.0.1") {
+	} else if strings.Contains(m.tcpBindAddress, "127.0.0.1") || strings.Contains(m.tcpBindAddress, "[::1]") {
 		listener, err = net.Listen("tcp", fmt.Sprintf("%s:%d", m.tcpBindAddress, m.tcpBindPort))
 	} else {
 		return fmt.Errorf("Unsecured tcp migration proxy listeners are not permitted")
@@ -371,6 +383,29 @@ func (m *migrationProxy) StopListening() {
 	}
 }
 
+func formatAddress(targetAddress string) string {
+	// In case address is already formatted ([ipv6]:port), no need to do anything
+	if strings.Contains(targetAddress, "[") {
+		return targetAddress
+	}
+
+	// Unix socket doesnt need to be formatted
+	if strings.Count(targetAddress, ":") == 0 {
+		return targetAddress
+	}
+
+	stringSlice := strings.Split(targetAddress, ":")
+	ip := strings.Join(stringSlice[:len(stringSlice)-1], ":")
+	port := stringSlice[len(stringSlice)-1]
+
+	if !netutils.IsIPv6String(ip) {
+		// Ipv4 string doesnt need to be formatted
+		return targetAddress
+	}
+
+	return "[" + ip + "]:" + port
+}
+
 func handleConnection(fd net.Conn, targetAddress string, targetProtocol string, clientTLSConfig *tls.Config, stopChan chan struct{}) {
 	defer fd.Close()
 
@@ -379,9 +414,12 @@ func handleConnection(fd net.Conn, targetAddress string, targetProtocol string, 
 
 	var conn net.Conn
 	var err error
+	targetAddress = formatAddress(targetAddress)
 	if targetProtocol == "tcp" && clientTLSConfig != nil {
+		log.Log.Infof("DBG11 address %s", targetAddress)
 		conn, err = tls.Dial(targetProtocol, targetAddress, clientTLSConfig)
 	} else {
+		log.Log.Infof("DBG22 address %s", targetAddress)
 		conn, err = net.Dial(targetProtocol, targetAddress)
 	}
 	if err != nil {

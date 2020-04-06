@@ -844,6 +844,9 @@ func (d *VirtualMachineController) migrationTargetExecute(key string,
 			if vmi.Status.MigrationState != nil {
 				hostAddress = vmi.Status.MigrationState.TargetNodeAddress
 			}
+
+			log.Log.Infof("DBG2 %s %s", hostAddress, d.ipAddress)
+
 			if hostAddress != d.ipAddress {
 				portsList := make([]int, 0, len(destSrcPortsMap))
 
@@ -1412,6 +1415,7 @@ func (d *VirtualMachineController) isMigrationSource(vmi *v1.VirtualMachineInsta
 		vmi.Status.MigrationState.TargetNodeAddress != "" &&
 		!vmi.Status.MigrationState.Completed {
 
+		log.Log.Infof("DBG4 %s %s %s", vmi.Status.MigrationState.SourceNode, d.host, vmi.Status.MigrationState.TargetNodeAddress)
 		return true
 	}
 	return false
@@ -1497,9 +1501,13 @@ func (d *VirtualMachineController) processVmUpdate(origVMI *v1.VirtualMachineIns
 		return fmt.Errorf("failed to handle migration proxy: %v", err)
 	}
 
-	if d.isPreMigrationTarget(vmi) {
-		if !isMigrating(vmi) {
+	log.Log.Infof("DBG3")
 
+	if d.isPreMigrationTarget(vmi) {
+		log.Log.Infof("DBG31")
+
+		if !isMigrating(vmi) {
+			log.Log.Infof("DBG32")
 			// Mount container disks
 			if err := d.containerDiskMounter.Mount(vmi, false); err != nil {
 				return err
@@ -1523,6 +1531,7 @@ func (d *VirtualMachineController) processVmUpdate(origVMI *v1.VirtualMachineIns
 			}
 		}
 	} else if d.isMigrationSource(vmi) {
+		log.Log.Infof("DBG33")
 		if vmi.Status.MigrationState.AbortRequested {
 			if vmi.Status.MigrationState.AbortStatus != v1.MigrationAbortInProgress {
 				err = client.CancelVirtualMachineMigration(vmi)
@@ -1532,6 +1541,7 @@ func (d *VirtualMachineController) processVmUpdate(origVMI *v1.VirtualMachineIns
 				d.recorder.Event(vmi, k8sv1.EventTypeNormal, v1.Migrating.String(), "VirtualMachineInstance is aborting migration.")
 			}
 		} else {
+			log.Log.Infof("DBG34")
 			options := &cmdclient.MigrationOptions{
 				Bandwidth:               *d.clusterConfig.GetMigrationConfig().BandwidthPerMigration,
 				ProgressTimeout:         *d.clusterConfig.GetMigrationConfig().ProgressTimeout,
@@ -1546,7 +1556,7 @@ func (d *VirtualMachineController) processVmUpdate(origVMI *v1.VirtualMachineIns
 			d.recorder.Event(vmi, k8sv1.EventTypeNormal, v1.Migrating.String(), "VirtualMachineInstance is migrating.")
 		}
 	} else {
-
+		log.Log.Infof("DBG35")
 		if !vmi.IsRunning() && !vmi.IsFinal() {
 			if err := d.containerDiskMounter.Mount(vmi, true); err != nil {
 				return err

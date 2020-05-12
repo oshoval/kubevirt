@@ -324,12 +324,16 @@ func NewTargetProxy(tcpBindAddress string, tcpBindPort int, serverTLSConfig *tls
 
 }
 
+func isLoopbackAddress(ipAddress string) bool {
+	return (strings.Contains(ipAddress, "127.0.0.1") || strings.Contains(ipAddress, "[::1]"))
+}
+
 func (m *migrationProxy) createTcpListener() error {
 	var listener net.Listener
 	var err error
 	if m.serverTLSConfig != nil {
 		listener, err = tls.Listen("tcp", fmt.Sprintf("%s:%d", m.tcpBindAddress, m.tcpBindPort), m.serverTLSConfig)
-	} else if strings.Contains(m.tcpBindAddress, "127.0.0.1") {
+	} else if isLoopbackAddress(m.tcpBindAddress) {
 		listener, err = net.Listen("tcp", fmt.Sprintf("%s:%d", m.tcpBindAddress, m.tcpBindPort))
 	} else {
 		return fmt.Errorf("Unsecured tcp migration proxy listeners are not permitted")

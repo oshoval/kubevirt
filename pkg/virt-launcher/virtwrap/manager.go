@@ -26,7 +26,6 @@ package virtwrap
 */
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"encoding/xml"
@@ -60,6 +59,7 @@ import (
 	"kubevirt.io/kubevirt/pkg/hooks"
 	hostdisk "kubevirt.io/kubevirt/pkg/host-disk"
 	"kubevirt.io/kubevirt/pkg/ignition"
+	iputils "kubevirt.io/kubevirt/pkg/util/net/ip"
 	migrationproxy "kubevirt.io/kubevirt/pkg/virt-handler/migration-proxy"
 	agentpoller "kubevirt.io/kubevirt/pkg/virt-launcher/virtwrap/agent-poller"
 	"kubevirt.io/kubevirt/pkg/virt-launcher/virtwrap/api"
@@ -504,41 +504,7 @@ func (l *LibvirtDomainManager) SetGuestTime(vmi *v1.VirtualMachineInstance) erro
 }
 
 func (l *LibvirtDomainManager) GetLoopbackAddress() string {
-	var disableIPv6 string
-	file, err := os.Open("/proc/sys/net/ipv6/conf/default/disable_ipv6")
-	if err != nil {
-		//log.Log.Infof("DBGDBG1 %s", "127.0.0.1")
-		return "127.0.0.1"
-	}
-
-	defer file.Close()
-	scanner := bufio.NewScanner(file)
-	if scanner.Scan() {
-		disableIPv6 = scanner.Text()
-	}
-	if err := scanner.Err(); err != nil {
-		//log.Log.Infof("DBGDBG2 %s", "127.0.0.1")
-		return "127.0.0.1"
-	}
-
-	if disableIPv6 == "1" {
-		//log.Log.Infof("DBGDBG3 %s", "127.0.0.1")
-		return "127.0.0.1"
-	}
-
-	//log.Log.Infof("DBGDBG4 %s", "[::1]")
-	return "[::1]"
-
-	/*
-		ipv6Disabled, err := exec.Command("cat", "/proc/sys/net/ipv6/conf/default/disable_ipv6").Output()
-		if err != nil || string(ipv6Disabled) == "1" {
-			log.Log.Infof("DBGDBG %s", "127.0.0.1")
-			return "127.0.0.1"
-		}
-
-		log.Log.Infof("DBGDBG %s", "[::]")
-		return "[::1]"
-	*/
+	return iputils.GetLoopbackAddress()
 }
 
 func (l *LibvirtDomainManager) getGuestTimeContext() context.Context {

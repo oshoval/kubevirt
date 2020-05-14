@@ -33,7 +33,7 @@ import (
 	netutils "k8s.io/utils/net"
 
 	"kubevirt.io/client-go/log"
-	"kubevirt.io/kubevirt/pkg/util"
+	iputils "kubevirt.io/kubevirt/pkg/util/net/ip"
 )
 
 const (
@@ -133,7 +133,7 @@ func (m *migrationProxyManager) StartTargetListener(key string, targetUnixFiles 
 	proxiesList := []*migrationProxy{}
 	for _, targetUnixFile := range targetUnixFiles {
 		// 0 means random port is used
-		proxy := NewTargetProxy(util.GetIPBindAddress(), 0, m.serverTLSConfig, m.clientTLSConfig, targetUnixFile)
+		proxy := NewTargetProxy(iputils.GetIPBindAddress(), 0, m.serverTLSConfig, m.clientTLSConfig, targetUnixFile)
 
 		err := proxy.StartListening()
 		if err != nil {

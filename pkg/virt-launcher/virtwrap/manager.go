@@ -59,6 +59,7 @@ import (
 	"kubevirt.io/kubevirt/pkg/hooks"
 	hostdisk "kubevirt.io/kubevirt/pkg/host-disk"
 	"kubevirt.io/kubevirt/pkg/ignition"
+	"kubevirt.io/kubevirt/pkg/util/net/ip"
 	migrationproxy "kubevirt.io/kubevirt/pkg/virt-handler/migration-proxy"
 	agentpoller "kubevirt.io/kubevirt/pkg/virt-launcher/virtwrap/agent-poller"
 	"kubevirt.io/kubevirt/pkg/virt-launcher/virtwrap/api"
@@ -95,6 +96,7 @@ type DomainManager interface {
 	GetUsers() ([]v1.VirtualMachineInstanceGuestOSUser, error)
 	GetFilesystems() ([]v1.VirtualMachineInstanceFileSystem, error)
 	SetGuestTime(*v1.VirtualMachineInstance) error
+	GetLoopbackAddress() string
 }
 
 type LibvirtDomainManager struct {
@@ -410,10 +412,12 @@ func (l *LibvirtDomainManager) asyncMigrate(vmi *v1.VirtualMachineInstance, opti
 		isBlockMigration := (vmi.Status.MigrationMethod == v1.BlockMigration)
 		migrationPortsRange := migrationproxy.GetMigrationPortsList(isBlockMigration)
 
+		loopbackAddress := l.GetLoopbackAddress()
+
 		// Create a tcp server for each direct connection proxy
 		for _, port := range migrationPortsRange {
 			key := migrationproxy.ConstructProxyKey(string(vmi.UID), port)
-			migrationProxy := migrationproxy.NewTargetProxy("127.0.0.1", port, nil, nil, migrationproxy.SourceUnixFile(l.virtShareDir, key))
+			migrationProxy := migrationproxy.NewTargetProxy(loopbackAddress, port, nil, nil, migrationproxy.SourceUnixFile(l.virtShareDir, key))
 			defer migrationProxy.StopListening()
 			err := migrationProxy.StartListening()
 			if err != nil {
@@ -423,7 +427,7 @@ func (l *LibvirtDomainManager) asyncMigrate(vmi *v1.VirtualMachineInstance, opti
 		}
 
 		//  proxy incoming migration requests on port 22222 to the vmi's existing libvirt connection
-		libvirtConnectionProxy := migrationproxy.NewTargetProxy("127.0.0.1", LibvirtLocalConnectionPort, nil, nil, migrationproxy.SourceUnixFile(l.virtShareDir, string(vmi.UID)))
+		libvirtConnectionProxy := migrationproxy.NewTargetProxy(loopbackAddress, LibvirtLocalConnectionPort, nil, nil, migrationproxy.SourceUnixFile(l.virtShareDir, string(vmi.UID)))
 		defer libvirtConnectionProxy.StopListening()
 		err := libvirtConnectionProxy.StartListening()
 		if err != nil {
@@ -432,8 +436,8 @@ func (l *LibvirtDomainManager) asyncMigrate(vmi *v1.VirtualMachineInstance, opti
 		}
 
 		// For a tunnelled migration, this is always the uri
-		dstUri := fmt.Sprintf("qemu+tcp://127.0.0.1:%d/system", LibvirtLocalConnectionPort)
-		migrUri := "tcp://127.0.0.1"
+		dstUri := fmt.Sprintf("qemu+tcp://%s:%d/system", loopbackAddress, LibvirtLocalConnectionPort)
+		migrUri := "tcp://" + loopbackAddress
 
 		domName := api.VMINamespaceKeyFunc(vmi)
 		dom, err := l.virConn.LookupDomainByName(domName)
@@ -497,6 +501,10 @@ func (l *LibvirtDomainManager) SetGuestTime(vmi *v1.VirtualMachineInstance) erro
 	// try setting the guest time. Fail early if agent is not configured.
 	l.setGuestTime(vmi, dom)
 	return nil
+}
+
+func (l *LibvirtDomainManager) GetLoopbackAddress() string {
+	return ip.GetLoopbackAddress()
 }
 
 func (l *LibvirtDomainManager) getGuestTimeContext() context.Context {
@@ -748,7 +756,7 @@ func (l *LibvirtDomainManager) MigrateVMI(vmi *v1.VirtualMachineInstance, option
 		return nil
 	}
 
-	if err := updateHostsFile(fmt.Sprintf("%s %s\n", "127.0.0.1", vmi.Status.MigrationState.TargetPod)); err != nil {
+	if err := updateHostsFile(fmt.Sprintf("%s %s\n", l.GetLoopbackAddress(), vmi.Status.MigrationState.TargetPod)); err != nil {
 		return fmt.Errorf("failed to update the hosts file: %v", err)
 	}
 	l.asyncMigrate(vmi, options)
@@ -857,7 +865,7 @@ func (l *LibvirtDomainManager) PrepareMigrationTarget(vmi *v1.VirtualMachineInst
 		return fmt.Errorf("executing custom preStart hooks failed: %v", err)
 	}
 
-	if err := updateHostsFile(fmt.Sprintf("%s %s\n", "127.0.0.1", vmi.Status.MigrationState.TargetPod)); err != nil {
+	if err := updateHostsFile(fmt.Sprintf("%s %s\n", l.GetLoopbackAddress(), vmi.Status.MigrationState.TargetPod)); err != nil {
 		return fmt.Errorf("failed to update the hosts file: %v", err)
 	}
 
@@ -866,7 +874,7 @@ func (l *LibvirtDomainManager) PrepareMigrationTarget(vmi *v1.VirtualMachineInst
 	for _, port := range migrationPortsRange {
 		// Prepare the direct migration proxy
 		key := migrationproxy.ConstructProxyKey(string(vmi.UID), port)
-		curDirectAddress := fmt.Sprintf("%s:%d", "127.0.0.1", port)
+		curDirectAddress := fmt.Sprintf("%s:%d", l.GetLoopbackAddress(), port)
 		unixSocketPath := migrationproxy.SourceUnixFile(l.virtShareDir, key)
 		migrationProxy := migrationproxy.NewSourceProxy(unixSocketPath, curDirectAddress, nil, nil)
 

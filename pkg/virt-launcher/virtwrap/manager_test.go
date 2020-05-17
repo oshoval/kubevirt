@@ -54,6 +54,7 @@ import (
 var _ = Describe("Manager", func() {
 	var mockConn *cli.MockConnection
 	var mockDomain *cli.MockVirDomain
+	var domainManager *MockDomainManager
 	var ctrl *gomock.Controller
 	testVmName := "testvmi"
 	testNamespace := "testnamespace"
@@ -79,6 +80,7 @@ var _ = Describe("Manager", func() {
 		ctrl = gomock.NewController(GinkgoT())
 		mockConn = cli.NewMockConnection(ctrl)
 		mockDomain = cli.NewMockVirDomain(ctrl)
+		domainManager = NewMockDomainManager(ctrl)
 	})
 
 	expectIsolationDetectionForVMI := func(vmi *v1.VirtualMachineInstance) *api.DomainSpec {
@@ -552,6 +554,8 @@ var _ = Describe("Manager", func() {
 		It("should detect inprogress migration job", func() {
 			// Make sure that we always free the domain after use
 			mockDomain.EXPECT().Free()
+
+			domainManager.EXPECT().GetLoopbackAddress().AnyTimes().Return("127.0.0.1")
 
 			vmi := newVMI(testNamespace, testVmName)
 			vmi.Status.MigrationState = &v1.VirtualMachineInstanceMigrationState{

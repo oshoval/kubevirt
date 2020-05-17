@@ -33,6 +33,7 @@ import (
 	netutils "k8s.io/utils/net"
 
 	"kubevirt.io/client-go/log"
+	iputils "kubevirt.io/kubevirt/pkg/util/net/ip"
 )
 
 const (
@@ -132,7 +133,7 @@ func (m *migrationProxyManager) StartTargetListener(key string, targetUnixFiles 
 	proxiesList := []*migrationProxy{}
 	for _, targetUnixFile := range targetUnixFiles {
 		// 0 means random port is used
-		proxy := NewTargetProxy("0.0.0.0", 0, m.serverTLSConfig, m.clientTLSConfig, targetUnixFile)
+		proxy := NewTargetProxy(iputils.GetIPBindAddress(), 0, m.serverTLSConfig, m.clientTLSConfig, targetUnixFile)
 
 		err := proxy.StartListening()
 		if err != nil {
@@ -328,7 +329,7 @@ func (m *migrationProxy) createTcpListener() error {
 	var err error
 	if m.serverTLSConfig != nil {
 		listener, err = tls.Listen("tcp", fmt.Sprintf("%s:%d", m.tcpBindAddress, m.tcpBindPort), m.serverTLSConfig)
-	} else if strings.Contains(m.tcpBindAddress, "127.0.0.1") {
+	} else if iputils.IsLoopbackAddress(m.tcpBindAddress) {
 		listener, err = net.Listen("tcp", fmt.Sprintf("%s:%d", m.tcpBindAddress, m.tcpBindPort))
 	} else {
 		return fmt.Errorf("Unsecured tcp migration proxy listeners are not permitted")

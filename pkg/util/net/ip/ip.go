@@ -22,41 +22,48 @@ import (
 	"io/ioutil"
 	"net"
 	"strings"
+
+	netutils "k8s.io/utils/net"
 )
 
 const (
 	// sysfs
 	disableIPv6Path = "/proc/sys/net/ipv6/conf/default/disable_ipv6"
 
-	// Special IPs
-	IPV4_BIND_ADDRESS     = "0.0.0.0" //INADDR_ANY
-	IPV4_LOOPBACK_ADDRESS = "127.0.0.1"
-	IPV6_BIND_ADDRESS     = "[::]" //INADDR6_ANY
-	IPV6_LOOPBACK_ADDRESS = "[::1]"
+	ipv4Loopback = "127.0.0.1"
 )
 
 // GetIPZeroAddress returns INADDR_ANY or INADDR6_ANY (according sysctl disable_ipv6)
 func GetIPZeroAddress() string {
 	if isIPv6Disabled(disableIPv6Path) {
-		return IPV4_BIND_ADDRESS
+		return net.IPv4zero.String()
 	}
 
-	return IPV6_BIND_ADDRESS
+	return net.IPv6zero.String()
 }
 
 // GetLoopbackAddress returns loopback IP (either 127.0.0.1 or [::1] according sysctl disable_ipv6)
 func GetLoopbackAddress() string {
 	if isIPv6Disabled(disableIPv6Path) {
-		return IPV4_LOOPBACK_ADDRESS
+		return ipv4Loopback
 	}
 
-	return IPV6_LOOPBACK_ADDRESS
+	return net.IPv6loopback.String()
 }
 
 // IsLoopbackAddress checks if the address is IPv4 / IPv6 loopback address
 func IsLoopbackAddress(ipAddress string) bool {
 	loopback := net.ParseIP(ipAddress)
-	return loopback.IsLoopback() || ipAddress == IPV6_LOOPBACK_ADDRESS
+	return loopback.IsLoopback()
+}
+
+// NormalizeIPAddress returns normalized IP, adding square brackets for IPv6 if needed
+func NormalizeIPAddress(ipAddress string) string {
+	if netutils.IsIPv6String(ipAddress) {
+		return "[" + ipAddress + "]"
+	}
+
+	return ipAddress
 }
 
 func isIPv6Disabled(path string) bool {

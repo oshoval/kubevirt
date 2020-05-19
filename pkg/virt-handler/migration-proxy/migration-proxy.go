@@ -30,8 +30,6 @@ import (
 	"strings"
 	"sync"
 
-	netutils "k8s.io/utils/net"
-
 	"kubevirt.io/client-go/log"
 	"kubevirt.io/kubevirt/pkg/util/net/ip"
 )
@@ -217,17 +215,13 @@ func (m *migrationProxyManager) StartSourceListener(key string, targetAddress st
 	m.managerLock.Lock()
 	defer m.managerLock.Unlock()
 
-	if netutils.IsIPv6String(targetAddress) {
-		targetAddress = "[" + targetAddress + "]"
-	}
-
 	isExistingProxy := func(curProxies []*migrationProxy, targetAddress string, destSrcPortMap map[string]int) bool {
 		if len(curProxies) != len(destSrcPortMap) {
 			return false
 		}
 		destSrcLookup := make(map[string]int)
 		for dest, src := range destSrcPortMap {
-			addr := fmt.Sprintf("%s:%s", targetAddress, dest)
+			addr := net.JoinHostPort(targetAddress, dest)
 			destSrcLookup[addr] = src
 		}
 		for _, curProxy := range curProxies {
@@ -255,7 +249,7 @@ func (m *migrationProxyManager) StartSourceListener(key string, targetAddress st
 	proxiesList := []*migrationProxy{}
 	for destPort, srcPort := range destSrcPortMap {
 		proxyKey := ConstructProxyKey(key, srcPort)
-		targetFullAddr := fmt.Sprintf("%s:%s", targetAddress, destPort)
+		targetFullAddr := net.JoinHostPort(targetAddress, destPort)
 		filePath := SourceUnixFile(baseDir, proxyKey)
 
 		os.RemoveAll(filePath)
@@ -327,10 +321,12 @@ func NewTargetProxy(tcpBindAddress string, tcpBindPort int, serverTLSConfig *tls
 func (m *migrationProxy) createTcpListener() error {
 	var listener net.Listener
 	var err error
+
+	laddr := net.JoinHostPort(m.tcpBindAddress, strconv.Itoa(m.tcpBindPort))
 	if m.serverTLSConfig != nil {
-		listener, err = tls.Listen("tcp", fmt.Sprintf("%s:%d", m.tcpBindAddress, m.tcpBindPort), m.serverTLSConfig)
+		listener, err = tls.Listen("tcp", laddr, m.serverTLSConfig)
 	} else if ip.IsLoopbackAddress(m.tcpBindAddress) {
-		listener, err = net.Listen("tcp", fmt.Sprintf("%s:%d", m.tcpBindAddress, m.tcpBindPort))
+		listener, err = net.Listen("tcp", laddr)
 	} else {
 		return fmt.Errorf("Unsecured tcp migration proxy listeners are not permitted")
 	}

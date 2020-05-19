@@ -30,10 +30,12 @@ import (
 	"encoding/json"
 	"encoding/xml"
 	"fmt"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -432,8 +434,8 @@ func (l *LibvirtDomainManager) asyncMigrate(vmi *v1.VirtualMachineInstance, opti
 		}
 
 		// For a tunnelled migration, this is always the uri
-		dstUri := fmt.Sprintf("qemu+tcp://%s:%d/system", loopbackAddress, LibvirtLocalConnectionPort)
-		migrUri := "tcp://" + loopbackAddress
+		dstURI := fmt.Sprintf("qemu+tcp://%s/system", net.JoinHostPort(loopbackAddress, strconv.Itoa(LibvirtLocalConnectionPort)))
+		migrURI := fmt.Sprintf("tcp://%s", ip.NormalizeIPAddress(loopbackAddress))
 
 		domName := api.VMINamespaceKeyFunc(vmi)
 		dom, err := l.virConn.LookupDomainByName(domName)
@@ -457,7 +459,7 @@ func (l *LibvirtDomainManager) asyncMigrate(vmi *v1.VirtualMachineInstance, opti
 
 		params := &libvirt.DomainMigrateParameters{
 			Bandwidth: bandwidth, // MiB/s
-			URI:       migrUri,
+			URI:       migrURI,
 			URISet:    true,
 		}
 		copyDisks := getDiskTargetsForMigration(dom, vmi)
@@ -469,7 +471,7 @@ func (l *LibvirtDomainManager) asyncMigrate(vmi *v1.VirtualMachineInstance, opti
 		migrationErrorChan := make(chan error, 1)
 		defer close(migrationErrorChan)
 		go liveMigrationMonitor(vmi, dom, l, options, migrationErrorChan)
-		err = dom.MigrateToURI3(dstUri, params, migrateFlags)
+		err = dom.MigrateToURI3(dstURI, params, migrateFlags)
 		if err != nil {
 			log.Log.Object(vmi).Reason(err).Error("Live migration failed.")
 			migrationErrorChan <- err
@@ -868,7 +870,7 @@ func (l *LibvirtDomainManager) PrepareMigrationTarget(vmi *v1.VirtualMachineInst
 	for _, port := range migrationPortsRange {
 		// Prepare the direct migration proxy
 		key := migrationproxy.ConstructProxyKey(string(vmi.UID), port)
-		curDirectAddress := fmt.Sprintf("%s:%d", loopbackAddress, port)
+		curDirectAddress := net.JoinHostPort(loopbackAddress, strconv.Itoa(port))
 		unixSocketPath := migrationproxy.SourceUnixFile(l.virtShareDir, key)
 		migrationProxy := migrationproxy.NewSourceProxy(unixSocketPath, curDirectAddress, nil, nil)
 

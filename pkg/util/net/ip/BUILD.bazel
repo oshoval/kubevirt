@@ -5,4 +5,5 @@ go_library(
     srcs = ["ip.go"],
     importpath = "kubevirt.io/kubevirt/pkg/util/net/ip",
     visibility = ["//visibility:public"],
+    deps = ["//vendor/k8s.io/utils/net:go_default_library"],
 )

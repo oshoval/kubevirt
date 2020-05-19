@@ -224,11 +224,13 @@ func (m *migrationProxyManager) StartSourceListener(key string, targetAddress st
 		destSrcLookup := make(map[string]int)
 		for dest, src := range destSrcPortMap {
 
-			formattedTargetAddress := targetAddress
-			if netutils.IsIPv6String(formattedTargetAddress) {
-				formattedTargetAddress = "[" + formattedTargetAddress + "]"
-			}
-			addr := fmt.Sprintf("%s:%s", formattedTargetAddress, dest)
+			// formattedTargetAddress := targetAddress
+			// if netutils.IsIPv6String(formattedTargetAddress) {
+			// 	formattedTargetAddress = "[" + formattedTargetAddress + "]"
+			// }
+			// addr := fmt.Sprintf("%s:%s", formattedTargetAddress, dest)
+
+			addr := net.JoinHostPort(targetAddress, dest)
 			destSrcLookup[addr] = src
 		}
 		for _, curProxy := range curProxies {
@@ -257,11 +259,13 @@ func (m *migrationProxyManager) StartSourceListener(key string, targetAddress st
 	for destPort, srcPort := range destSrcPortMap {
 		proxyKey := ConstructProxyKey(key, srcPort)
 
-		formattedTargetAddress := targetAddress
-		if netutils.IsIPv6String(formattedTargetAddress) {
-			formattedTargetAddress = "[" + formattedTargetAddress + "]"
-		}
-		targetFullAddr := fmt.Sprintf("%s:%s", formattedTargetAddress, destPort)
+		// formattedTargetAddress := targetAddress
+		// if netutils.IsIPv6String(formattedTargetAddress) {
+		// 	formattedTargetAddress = "[" + formattedTargetAddress + "]"
+		// }
+		// targetFullAddr := fmt.Sprintf("%s:%s", formattedTargetAddress, destPort)
+
+		targetFullAddr := net.JoinHostPort(targetAddress, destPort)
 		filePath := SourceUnixFile(baseDir, proxyKey)
 
 		os.RemoveAll(filePath)

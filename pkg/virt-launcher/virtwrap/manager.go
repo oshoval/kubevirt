@@ -30,10 +30,12 @@ import (
 	"encoding/json"
 	"encoding/xml"
 	"fmt"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -884,12 +886,13 @@ func (l *LibvirtDomainManager) PrepareMigrationTarget(vmi *v1.VirtualMachineInst
 
 		log.Log.Infof("DBGDBG4 manager.go %s %d", l.GetLoopbackAddress(), port)
 
-		formattedTargetAddress := l.GetLoopbackAddress()
-		if netutils.IsIPv6String(formattedTargetAddress) {
-			formattedTargetAddress = "[" + formattedTargetAddress + "]"
-		}
+		// formattedTargetAddress := l.GetLoopbackAddress()
+		// if netutils.IsIPv6String(formattedTargetAddress) {
+		// 	formattedTargetAddress = "[" + formattedTargetAddress + "]"
+		// }
+		// curDirectAddress := fmt.Sprintf("%s:%d", formattedTargetAddress, port)
 
-		curDirectAddress := fmt.Sprintf("%s:%d", formattedTargetAddress, port)
+		curDirectAddress := net.JoinHostPort(l.GetLoopbackAddress(), strconv.Itoa(port))
 		unixSocketPath := migrationproxy.SourceUnixFile(l.virtShareDir, key)
 		migrationProxy := migrationproxy.NewSourceProxy(unixSocketPath, curDirectAddress, nil, nil)
 

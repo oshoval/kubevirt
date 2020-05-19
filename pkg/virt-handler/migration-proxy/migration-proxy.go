@@ -217,9 +217,6 @@ func (m *migrationProxyManager) StartSourceListener(key string, targetAddress st
 	m.managerLock.Lock()
 	defer m.managerLock.Unlock()
 
-	if netutils.IsIPv6String(targetAddress) {
-		targetAddress = "[" + targetAddress + "]"
-	}
 
 	isExistingProxy := func(curProxies []*migrationProxy, targetAddress string, destSrcPortMap map[string]int) bool {
 		if len(curProxies) != len(destSrcPortMap) {
@@ -327,10 +324,20 @@ func NewTargetProxy(tcpBindAddress string, tcpBindPort int, serverTLSConfig *tls
 func (m *migrationProxy) createTcpListener() error {
 	var listener net.Listener
 	var err error
+
+	log.Log.Infof("DBGDBG %s", m.tcpBindAddress)
+
+	targetAddress := m.tcpBindAddress
+	if netutils.IsIPv6String(targetAddress) {
+		targetAddress = "[" + targetAddress + "]"
+	}
+
 	if m.serverTLSConfig != nil {
-		listener, err = tls.Listen("tcp", fmt.Sprintf("%s:%d", m.tcpBindAddress, m.tcpBindPort), m.serverTLSConfig)
+		log.Log.Info("DBGDBG1 at 1")
+		listener, err = tls.Listen("tcp", fmt.Sprintf("%s:%d", targetAddress, m.tcpBindPort), m.serverTLSConfig)
 	} else if ip.IsLoopbackAddress(m.tcpBindAddress) {
-		listener, err = net.Listen("tcp", fmt.Sprintf("%s:%d", m.tcpBindAddress, m.tcpBindPort))
+		log.Log.Info("DBGDBG1 at 2")
+		listener, err = net.Listen("tcp", fmt.Sprintf("%s:%d", targetAddress, m.tcpBindPort))
 	} else {
 		return fmt.Errorf("Unsecured tcp migration proxy listeners are not permitted")
 	}
@@ -384,6 +391,16 @@ func handleConnection(fd net.Conn, targetAddress string, targetProtocol string, 
 
 	var conn net.Conn
 	var err error
+
+	splitted := strings.Split(targetAddress, ":")
+	ipAddr := strings.Join(splitted[:len(splitted)-1], ":")
+	if netutils.IsIPv6String(ipAddr) {
+		ipAddr = "[" + ipAddr + "]"
+		targetAddress = ipAddr + ":" + splitted[len(splitted)-1]
+	}
+
+	log.Log.Infof("DBGDBG3 after %s", targetAddress)
+
 	if targetProtocol == "tcp" && clientTLSConfig != nil {
 		conn, err = tls.Dial(targetProtocol, targetAddress, clientTLSConfig)
 	} else {
@@ -453,6 +470,9 @@ func (m *migrationProxy) StartListening() error {
 		for {
 			select {
 			case fd := <-fdChan:
+
+				log.Log.Infof("DBGDBG2 %s", targetAddress)
+
 				go handleConnection(fd, targetAddress, targetProtocol, clientTLSConfig, stopChan)
 			case <-stopChan:
 				return

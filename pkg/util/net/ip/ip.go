@@ -31,8 +31,8 @@ const (
 	// Special IPs
 	IPV4_BIND_ADDRESS     = "0.0.0.0" //INADDR_ANY
 	IPV4_LOOPBACK_ADDRESS = "127.0.0.1"
-	IPV6_BIND_ADDRESS     = "[::]" //INADDR6_ANY
-	IPV6_LOOPBACK_ADDRESS = "[::1]"
+	IPV6_BIND_ADDRESS     = "::" //INADDR6_ANY
+	IPV6_LOOPBACK_ADDRESS = "::1"
 )
 
 func readSysfsFile(path string) (string, error) {
@@ -77,5 +77,5 @@ func GetLoopbackAddress() string {
 // IsLoopbackAddress checks if the address is IPv4 / IPv6 loopback address
 func IsLoopbackAddress(ipAddress string) bool {
 	loopback := net.ParseIP(ipAddress)
-	return loopback.IsLoopback() || ipAddress == IPV6_LOOPBACK_ADDRESS
+	return loopback.IsLoopback()
 }

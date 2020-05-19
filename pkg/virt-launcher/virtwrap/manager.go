@@ -48,6 +48,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	utilwait "k8s.io/apimachinery/pkg/util/wait"
 
+	netutils "k8s.io/utils/net"
 	v1 "kubevirt.io/client-go/api/v1"
 	"kubevirt.io/client-go/log"
 	cloudinit "kubevirt.io/kubevirt/pkg/cloud-init"
@@ -436,8 +437,14 @@ func (l *LibvirtDomainManager) asyncMigrate(vmi *v1.VirtualMachineInstance, opti
 		}
 
 		// For a tunnelled migration, this is always the uri
-		dstUri := fmt.Sprintf("qemu+tcp://%s:%d/system", loopbackAddress, LibvirtLocalConnectionPort)
-		migrUri := "tcp://" + loopbackAddress
+
+		formattedLoopbackAddress := loopbackAddress
+		if netutils.IsIPv6String(formattedLoopbackAddress) {
+			formattedLoopbackAddress = "[" + formattedLoopbackAddress + "]"
+		}
+
+		dstUri := fmt.Sprintf("qemu+tcp://%s:%d/system", formattedLoopbackAddress, LibvirtLocalConnectionPort)
+		migrUri := "tcp://" + formattedLoopbackAddress
 
 		domName := api.VMINamespaceKeyFunc(vmi)
 		dom, err := l.virConn.LookupDomainByName(domName)
@@ -874,6 +881,8 @@ func (l *LibvirtDomainManager) PrepareMigrationTarget(vmi *v1.VirtualMachineInst
 	for _, port := range migrationPortsRange {
 		// Prepare the direct migration proxy
 		key := migrationproxy.ConstructProxyKey(string(vmi.UID), port)
+
+		log.Log.Infof("DBGDBG4 manager.go %s %d", l.GetLoopbackAddress(), port)
 		curDirectAddress := fmt.Sprintf("%s:%d", l.GetLoopbackAddress(), port)
 		unixSocketPath := migrationproxy.SourceUnixFile(l.virtShareDir, key)
 		migrationProxy := migrationproxy.NewSourceProxy(unixSocketPath, curDirectAddress, nil, nil)

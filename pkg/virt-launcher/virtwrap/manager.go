@@ -50,6 +50,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	utilwait "k8s.io/apimachinery/pkg/util/wait"
 
+        ginko "github.com/onsi/ginkgo"
 	v1 "kubevirt.io/client-go/api/v1"
 	"kubevirt.io/client-go/log"
 	cloudinit "kubevirt.io/kubevirt/pkg/cloud-init"
@@ -400,6 +401,7 @@ func getDiskTargetsForMigration(dom cli.VirDomain, vmi *v1.VirtualMachineInstanc
 
 func (l *LibvirtDomainManager) asyncMigrate(vmi *v1.VirtualMachineInstance, options *cmdclient.MigrationOptions) {
 	go func(l *LibvirtDomainManager, vmi *v1.VirtualMachineInstance) {
+		defer ginko.GinkgoRecover()
 
 		// Start local migration proxy.
 		//

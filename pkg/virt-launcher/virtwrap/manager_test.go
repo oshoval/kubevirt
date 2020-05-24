@@ -491,7 +491,7 @@ var _ = Describe("Manager", func() {
 		})
 		It("should verify that migration failure is set in the monitor thread", func() {
 			isMigrationFailedSet := make(chan bool, 1)
-			loopbackAddress = "127.0.0.1"
+			//loopbackAddress = "127.0.0.1"
 			defer close(isMigrationFailedSet)
 
 			// Make sure that we always free the domain after use
@@ -552,7 +552,7 @@ var _ = Describe("Manager", func() {
 		It("should detect inprogress migration job", func() {
 			// Make sure that we always free the domain after use
 			mockDomain.EXPECT().Free()
-			loopbackAddress = "127.0.0.1"
+			//loopbackAddress = "127.0.0.1"
 
 			vmi := newVMI(testNamespace, testVmName)
 			vmi.Status.MigrationState = &v1.VirtualMachineInstanceMigrationState{

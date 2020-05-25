@@ -26,6 +26,8 @@ import (
 	netutils "k8s.io/utils/net"
 )
 
+var GetLoopbackAddress = getLoopbackAddress
+
 const (
 	// sysfs
 	disableIPv6Path = "/proc/sys/net/ipv6/conf/default/disable_ipv6"
@@ -42,8 +44,7 @@ func GetIPZeroAddress() string {
 	return net.IPv6zero.String()
 }
 
-// GetLoopbackAddress returns loopback IP (either 127.0.0.1 or [::1] according sysctl disable_ipv6)
-func GetLoopbackAddress() string {
+func getLoopbackAddress() string {
 	if isIPv6Disabled(disableIPv6Path) {
 		return ipv4Loopback
 	}

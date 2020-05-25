@@ -127,8 +127,6 @@ type pausedVMIs struct {
 	paused map[types.UID]bool
 }
 
-var loopbackAddress = ip.GetLoopbackAddress()
-
 func (s pausedVMIs) add(uid types.UID) {
 	// implicitly locked by domainModifyLock
 	if _, ok := s.paused[uid]; !ok {
@@ -415,6 +413,7 @@ func (l *LibvirtDomainManager) asyncMigrate(vmi *v1.VirtualMachineInstance, opti
 		isBlockMigration := (vmi.Status.MigrationMethod == v1.BlockMigration)
 		migrationPortsRange := migrationproxy.GetMigrationPortsList(isBlockMigration)
 
+		loopbackAddress := ip.GetLoopbackAddress()
 		// Create a tcp server for each direct connection proxy
 		for _, port := range migrationPortsRange {
 			key := migrationproxy.ConstructProxyKey(string(vmi.UID), port)
@@ -753,7 +752,7 @@ func (l *LibvirtDomainManager) MigrateVMI(vmi *v1.VirtualMachineInstance, option
 		return nil
 	}
 
-	if err := updateHostsFile(fmt.Sprintf("%s %s\n", loopbackAddress, vmi.Status.MigrationState.TargetPod)); err != nil {
+	if err := updateHostsFile(fmt.Sprintf("%s %s\n", ip.GetLoopbackAddress(), vmi.Status.MigrationState.TargetPod)); err != nil {
 		return fmt.Errorf("failed to update the hosts file: %v", err)
 	}
 	l.asyncMigrate(vmi, options)
@@ -862,6 +861,7 @@ func (l *LibvirtDomainManager) PrepareMigrationTarget(vmi *v1.VirtualMachineInst
 		return fmt.Errorf("executing custom preStart hooks failed: %v", err)
 	}
 
+	loopbackAddress := ip.GetLoopbackAddress()
 	if err := updateHostsFile(fmt.Sprintf("%s %s\n", loopbackAddress, vmi.Status.MigrationState.TargetPod)); err != nil {
 		return fmt.Errorf("failed to update the hosts file: %v", err)
 	}

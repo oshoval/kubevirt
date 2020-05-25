@@ -39,6 +39,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	ephemeraldiskutils "kubevirt.io/kubevirt/pkg/ephemeral-disk-utils"
+	"kubevirt.io/kubevirt/pkg/util/net/ip"
 
 	v1 "kubevirt.io/client-go/api/v1"
 	"kubevirt.io/client-go/log"
@@ -474,6 +475,12 @@ var _ = Describe("Manager", func() {
 	})
 
 	Context("on successful VirtualMachineInstance migrate", func() {
+		BeforeEach(func() {
+			ip.GetLoopbackAddress = func() string {
+				return "127.0.0.1"
+			}
+		})
+
 		It("should prepare the target pod", func() {
 			updateHostsFile = func(entry string) error {
 				return nil
@@ -491,7 +498,7 @@ var _ = Describe("Manager", func() {
 		})
 		It("should verify that migration failure is set in the monitor thread", func() {
 			isMigrationFailedSet := make(chan bool, 1)
-			loopbackAddress = "127.0.0.1"
+
 			defer close(isMigrationFailedSet)
 
 			// Make sure that we always free the domain after use
@@ -552,7 +559,6 @@ var _ = Describe("Manager", func() {
 		It("should detect inprogress migration job", func() {
 			// Make sure that we always free the domain after use
 			mockDomain.EXPECT().Free()
-			loopbackAddress = "127.0.0.1"
 
 			vmi := newVMI(testNamespace, testVmName)
 			vmi.Status.MigrationState = &v1.VirtualMachineInstanceMigrationState{

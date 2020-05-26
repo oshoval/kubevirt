@@ -475,6 +475,8 @@ var _ = Describe("Manager", func() {
 	})
 
 	Context("on successful VirtualMachineInstance migrate", func() {
+		funcPreviousValue := ip.GetLoopbackAddress
+
 		BeforeEach(func() {
 			ip.GetLoopbackAddress = func() string {
 				return "127.0.0.1"
@@ -665,7 +667,9 @@ var _ = Describe("Manager", func() {
 			copyDisks := getDiskTargetsForMigration(mockDomain, vmi)
 			Expect(copyDisks).Should(ConsistOf("vdb", "vdd"))
 		})
-
+		AfterEach(func() {
+			ip.GetLoopbackAddress = funcPreviousValue
+		})
 	})
 
 	Context("on successful VirtualMachineInstance kill", func() {

@@ -21,18 +21,20 @@ package ip
 import (
 	"io/ioutil"
 	"net"
-	"strings"
 
 	netutils "k8s.io/utils/net"
 )
 
+type readFileFunc func(filename string) ([]byte, error)
+
 var GetLoopbackAddress = getLoopbackAddress
+var readFile = ioutil.ReadFile
 
 const (
 	// sysfs
 	disableIPv6Path = "/proc/sys/net/ipv6/conf/default/disable_ipv6"
 
-	ipv4Loopback = "127.0.0.1"
+	IPv4Loopback = "127.0.0.1"
 )
 
 // GetIPZeroAddress returns INADDR_ANY or INADDR6_ANY (according sysctl disable_ipv6)
@@ -46,7 +48,7 @@ func GetIPZeroAddress() string {
 
 func getLoopbackAddress() string {
 	if isIPv6Disabled(disableIPv6Path) {
-		return ipv4Loopback
+		return IPv4Loopback
 	}
 
 	return net.IPv6loopback.String()
@@ -67,12 +69,21 @@ func NormalizeIPAddress(ipAddress string) string {
 	return ipAddress
 }
 
-func isIPv6Disabled(path string) bool {
-	data, err := ioutil.ReadFile(path)
+func isIPv6Disabled(filename string) bool {
+	data, err := readFile(filename)
 	if err != nil {
 		return true
 	}
 
-	disableIPv6 := strings.TrimSuffix(string(data), "\n")
-	return disableIPv6 == "1"
+	return data[0] == '1'
+}
+
+// StubReadFile replaces readFile for unit tests
+func StubReadFile(f readFileFunc) {
+	readFile = f
+}
+
+// RestoreReadFile restores readFile production value
+func RestoreReadFile() {
+	readFile = ioutil.ReadFile
 }

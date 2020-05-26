@@ -27,9 +27,6 @@ import (
 
 type readFileFunc func(filename string) ([]byte, error)
 
-var GetLoopbackAddress = getLoopbackAddress
-var readFile = ioutil.ReadFile
-
 const (
 	// sysfs
 	disableIPv6Path = "/proc/sys/net/ipv6/conf/default/disable_ipv6"
@@ -37,17 +34,26 @@ const (
 	IPv4Loopback = "127.0.0.1"
 )
 
+// GetLoopbackAddress returns IPv4 / IPv6 loopback address (according sysctl disable_ipv6)
+var GetLoopbackAddress = func() string {
+	return getLoopbackAddress(isIPv6Disabled(disableIPv6Path))
+}
+
 // GetIPZeroAddress returns INADDR_ANY or INADDR6_ANY (according sysctl disable_ipv6)
 func GetIPZeroAddress() string {
-	if isIPv6Disabled(disableIPv6Path) {
+	return getIPZeroAddress(isIPv6Disabled(disableIPv6Path))
+}
+
+func getIPZeroAddress(ipv6Disabled bool) string {
+	if ipv6Disabled {
 		return net.IPv4zero.String()
 	}
 
 	return net.IPv6zero.String()
 }
 
-func getLoopbackAddress() string {
-	if isIPv6Disabled(disableIPv6Path) {
+func getLoopbackAddress(ipv6Disabled bool) string {
+	if ipv6Disabled {
 		return IPv4Loopback
 	}
 
@@ -70,20 +76,10 @@ func NormalizeIPAddress(ipAddress string) string {
 }
 
 func isIPv6Disabled(filename string) bool {
-	data, err := readFile(filename)
+	data, err := ioutil.ReadFile(filename)
 	if err != nil {
 		return true
 	}
 
 	return data[0] == '1'
-}
-
-// StubReadFile replaces readFile for unit tests
-func StubReadFile(f readFileFunc) {
-	readFile = f
-}
-
-// RestoreReadFile restores readFile production value
-func RestoreReadFile() {
-	readFile = ioutil.ReadFile
 }

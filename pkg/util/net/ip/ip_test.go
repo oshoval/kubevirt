@@ -72,46 +72,26 @@ var _ = Describe("IP utils test", func() {
 	Context("GetIPZeroAddress", func() {
 
 		It("should return IPv4 zero address", func() {
-			oneFunc := func(filename string) ([]byte, error) { return []byte{'1'}, nil }
-			StubReadFile(oneFunc)
-
-			address := GetIPZeroAddress()
+			address := getIPZeroAddress(true)
 			Expect(address).To(Equal("0.0.0.0"), "address is correct")
-
-			RestoreReadFile()
 		})
 
 		It("should return IPv6 zero address", func() {
-			zeroFunc := func(filename string) ([]byte, error) { return []byte{'0'}, nil }
-			StubReadFile(zeroFunc)
-
-			address := GetIPZeroAddress()
+			address := getIPZeroAddress(false)
 			Expect(address).To(Equal("::"), "address is correct")
-
-			RestoreReadFile()
 		})
 	})
 
 	Context("GetLoopbackAddress", func() {
 
 		It("should return IPv4 loopback address", func() {
-			oneFunc := func(filename string) ([]byte, error) { return []byte{'1'}, nil }
-			StubReadFile(oneFunc)
-
-			address := GetLoopbackAddress()
+			address := getLoopbackAddress(true)
 			Expect(address).To(Equal("127.0.0.1"), "address is correct")
-
-			RestoreReadFile()
 		})
 
 		It("should return IPv6 zero address", func() {
-			zeroFunc := func(filename string) ([]byte, error) { return []byte{'0'}, nil }
-			StubReadFile(zeroFunc)
-
-			address := GetLoopbackAddress()
+			address := getLoopbackAddress(false)
 			Expect(address).To(Equal("::1"), "address is correct")
-
-			RestoreReadFile()
 		})
 	})
 })

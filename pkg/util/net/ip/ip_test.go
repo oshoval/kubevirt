@@ -32,22 +32,22 @@ var _ = Describe("IP utils test", func() {
 
 		It("should detect IPv4 loopback address", func() {
 			result := IsLoopbackAddress(IPv4Loopback)
-			Expect(result).To(BeTrue(), "Is Loopback")
+			Expect(result).To(BeTrue())
 		})
 
 		It("should detect IPv4 non loopback address", func() {
 			result := IsLoopbackAddress("128.0.0.1")
-			Expect(result).To(BeFalse(), "Is not Loopback")
+			Expect(result).To(BeFalse())
 		})
 
 		It("should detect IPv6 loopback address", func() {
 			result := IsLoopbackAddress(net.IPv6loopback.String())
-			Expect(result).To(BeTrue(), "Is Loopback")
+			Expect(result).To(BeTrue())
 		})
 
 		It("should detect IPv6 non loopback address", func() {
 			result := IsLoopbackAddress("fd00:10:244:0:1::e")
-			Expect(result).To(BeFalse(), "Is not Loopback")
+			Expect(result).To(BeFalse())
 		})
 	})
 
@@ -55,17 +55,22 @@ var _ = Describe("IP utils test", func() {
 
 		It("should not normalize IPv4 address", func() {
 			address := NormalizeIPAddress(IPv4Loopback)
-			Expect(address).To(Equal(IPv4Loopback), "address was kept correct")
+			Expect(address).To(Equal(IPv4Loopback))
 		})
 
 		It("should normalize non normalized IPv6 address", func() {
 			address := NormalizeIPAddress("fd00:10:244:0:1::e")
-			Expect(address).To(Equal("[fd00:10:244:0:1::e]"), "address was normalized correct")
+			Expect(address).To(Equal("[fd00:10:244:0:1::e]"))
 		})
 
 		It("should keep normalized IPv6 address", func() {
 			address := NormalizeIPAddress("[fd00:10:244:0:1::e]")
-			Expect(address).To(Equal("[fd00:10:244:0:1::e]"), "address was kept normalized correct")
+			Expect(address).To(Equal("[fd00:10:244:0:1::e]"))
+		})
+
+		It("should keep invalid IPv6 address unchanged", func() {
+			address := NormalizeIPAddress("::x")
+			Expect(address).To(Equal("::x"))
 		})
 	})
 
@@ -73,12 +78,12 @@ var _ = Describe("IP utils test", func() {
 
 		It("should return IPv4 zero address", func() {
 			address := getIPZeroAddress(true)
-			Expect(address).To(Equal("0.0.0.0"), "address is correct")
+			Expect(address).To(Equal("0.0.0.0"))
 		})
 
 		It("should return IPv6 zero address", func() {
 			address := getIPZeroAddress(false)
-			Expect(address).To(Equal("::"), "address is correct")
+			Expect(address).To(Equal("::"))
 		})
 	})
 
@@ -86,12 +91,12 @@ var _ = Describe("IP utils test", func() {
 
 		It("should return IPv4 loopback address", func() {
 			address := getLoopbackAddress(true)
-			Expect(address).To(Equal("127.0.0.1"), "address is correct")
+			Expect(address).To(Equal("127.0.0.1"))
 		})
 
 		It("should return IPv6 zero address", func() {
 			address := getLoopbackAddress(false)
-			Expect(address).To(Equal("::1"), "address is correct")
+			Expect(address).To(Equal("::1"))
 		})
 	})
 })

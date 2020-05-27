@@ -128,10 +128,11 @@ func (m *migrationProxyManager) StartTargetListener(key string, targetUnixFiles 
 		}
 	}
 
+	zeroAddress := ip.GetIPZeroAddress()
 	proxiesList := []*migrationProxy{}
 	for _, targetUnixFile := range targetUnixFiles {
 		// 0 means random port is used
-		proxy := NewTargetProxy(ip.GetIPZeroAddress(), 0, m.serverTLSConfig, m.clientTLSConfig, targetUnixFile)
+		proxy := NewTargetProxy(zeroAddress, 0, m.serverTLSConfig, m.clientTLSConfig, targetUnixFile)
 
 		err := proxy.StartListening()
 		if err != nil {

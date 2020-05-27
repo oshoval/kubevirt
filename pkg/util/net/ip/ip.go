@@ -25,8 +25,6 @@ import (
 	netutils "k8s.io/utils/net"
 )
 
-type readFileFunc func(filename string) ([]byte, error)
-
 const (
 	// sysfs
 	disableIPv6Path = "/proc/sys/net/ipv6/conf/default/disable_ipv6"
@@ -66,7 +64,8 @@ func IsLoopbackAddress(ipAddress string) bool {
 	return loopback.IsLoopback()
 }
 
-// NormalizeIPAddress returns normalized IP, adding square brackets for IPv6 if needed
+// NormalizeIPAddress returns normalized IP, adding square brackets for IPv6 if needed,
+// Already Normalized IPv6 addresses, or invalid IPv6 addresses will stay unchanged.
 func NormalizeIPAddress(ipAddress string) string {
 	if netutils.IsIPv6String(ipAddress) {
 		return "[" + ipAddress + "]"

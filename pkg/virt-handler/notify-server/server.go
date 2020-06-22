@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
@@ -42,9 +43,11 @@ import (
 )
 
 type Notify struct {
-	EventChan chan watch.Event
-	recorder  record.EventRecorder
-	vmiStore  cache.Store
+	EventChan                chan watch.Event
+	recorder                 record.EventRecorder
+	vmiStore                 cache.Store
+	lock                     *sync.Mutex
+	backgroundWatcherStarted *bool
 }
 
 func (n *Notify) HandleDomainEvent(ctx context.Context, request *notifyv1.DomainEventRequest) (*notifyv1.Response, error) {
@@ -75,6 +78,14 @@ func (n *Notify) HandleDomainEvent(ctx context.Context, request *notifyv1.Domain
 	}
 
 	log.Log.Object(domain).Infof("Received Domain Event of type %s", request.EventType)
+	n.lock.Lock()
+	defer n.lock.Unlock()
+
+	if *n.backgroundWatcherStarted == false {
+		log.Log.Object(domain).Infof("Skipping sending Domain Event %s, server was killed or not ready", request.EventType)
+		return response, nil
+	}
+
 	switch request.EventType {
 	case string(watch.Added):
 		n.EventChan <- watch.Event{Type: watch.Added, Object: domain}
@@ -118,13 +129,16 @@ func (n *Notify) HandleK8SEvent(ctx context.Context, request *notifyv1.K8SEventR
 	return response, nil
 }
 
-func RunServer(virtShareDir string, stopChan chan struct{}, c chan watch.Event, recorder record.EventRecorder, vmiStore cache.Store) error {
+func RunServer(virtShareDir string, stopChan chan struct{}, c chan watch.Event, lock *sync.Mutex, bgWatcherStarted *bool, recorder record.EventRecorder, vmiStore cache.Store) error {
+	log.Log.Infof("DBG AT %s", "RunServer")
 
 	grpcServer := grpc.NewServer([]grpc.ServerOption{}...)
 	notifyServer := &Notify{
-		EventChan: c,
-		recorder:  recorder,
-		vmiStore:  vmiStore,
+		EventChan:                c,
+		recorder:                 recorder,
+		vmiStore:                 vmiStore,
+		lock:                     lock,
+		backgroundWatcherStarted: bgWatcherStarted,
 	}
 	registerInfoServer(grpcServer)
 

@@ -306,7 +306,7 @@ func (d *DomainWatcher) startBackground() error {
 		srvErr := make(chan error)
 		go func() {
 			defer close(srvErr)
-			err := notifyserver.RunServer(d.virtShareDir, d.stopChan, d.eventChan, d.recorder, d.vmiStore)
+			err := notifyserver.RunServer(d.virtShareDir, d.stopChan, d.eventChan, &d.lock, &d.backgroundWatcherStarted, d.recorder, d.vmiStore)
 			srvErr <- err
 		}()
 
@@ -488,7 +488,7 @@ func (d *DomainWatcher) listAllKnownDomains() ([]*api.Domain, error) {
 }
 
 func (d *DomainWatcher) List(options k8sv1.ListOptions) (runtime.Object, error) {
-
+	//debug.PrintStack()
 	log.Log.V(3).Info("Synchronizing domains")
 	err := d.startBackground()
 	if err != nil {

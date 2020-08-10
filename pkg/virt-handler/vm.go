@@ -526,8 +526,12 @@ func (d *VirtualMachineController) updateVMIStatus(vmi *v1.VirtualMachineInstanc
 					ifc := v1.VirtualMachineInstanceNetworkInterface{
 						Name: network.Name,
 						IP:   podIface.PodIP,
-						IPs:  []string{podIface.PodIP},
+						IPs:  []string{},
 					}
+					for _, ip := range podIface.PodIPs {
+						ifc.IPs = append(ifc.IPs, ip)
+					}
+
 					interfaces = append(interfaces, ifc)
 				}
 			}
@@ -586,10 +590,17 @@ func (d *VirtualMachineController) updateVMIStatus(vmi *v1.VirtualMachineInstanc
 						if err != nil {
 							return err
 						}
-						if iface.PodIP != existingInterfaceStatusByName[domainInterface.Alias.Name].IP {
+
+						shouldCopy := !stringSlicesEqual(existingInterfaceStatusByName[domainInterface.Alias.Name].IPs, iface.PodIPs[:])
+						if iface.PodIP != existingInterfaceStatusByName[domainInterface.Alias.Name].IP ||
+							shouldCopy {
 							newInterface.Name = domainInterface.Alias.Name
 							newInterface.IP = iface.PodIP
-							newInterface.IPs = []string{iface.PodIP}
+							newInterface.IPs = []string{}
+
+							for _, ip := range iface.PodIPs {
+								newInterface.IPs = append(newInterface.IPs, ip)
+							}
 						}
 					}
 				} else {
@@ -861,6 +872,20 @@ func (d *VirtualMachineController) updateVMIStatus(vmi *v1.VirtualMachineInstanc
 	}
 
 	return nil
+}
+
+func stringSlicesEqual(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+
+	for i, v := range a {
+		if v != b[i] {
+			return false
+		}
+	}
+
+	return true
 }
 
 func (c *VirtualMachineController) Run(threadiness int, stopCh chan struct{}) {

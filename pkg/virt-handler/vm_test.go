@@ -1632,7 +1632,8 @@ var _ = Describe("VirtualMachineInstance", func() {
 				Iface: &v1.Interface{
 					Name: interfaceName,
 				},
-				PodIP: "1.1.1.1",
+				PodIP:  "1.1.1.1",
+				PodIPs: [2]string{"1.1.1.1", "fd10:244::8c4c"},
 			}
 			podJson, err := json.Marshal(podCacheInterface)
 			Expect(err).ToNot(HaveOccurred())
@@ -1656,7 +1657,7 @@ var _ = Describe("VirtualMachineInstance", func() {
 				Expect(arg.(*v1.VirtualMachineInstance).Status.Interfaces[0].Name).To(Equal(podCacheInterface.Iface.Name))
 				Expect(arg.(*v1.VirtualMachineInstance).Status.Interfaces[0].IP).To(Equal(podCacheInterface.PodIP))
 				Expect(arg.(*v1.VirtualMachineInstance).Status.Interfaces[0].IPs[0]).To(Equal(podCacheInterface.PodIP))
-
+				Expect(arg.(*v1.VirtualMachineInstance).Status.Interfaces[0].IPs[1]).To(Equal(podCacheInterface.PodIPs[1]))
 			}).Return(vmi, nil)
 
 			controller.Execute()
@@ -1696,7 +1697,8 @@ var _ = Describe("VirtualMachineInstance", func() {
 				Iface: &v1.Interface{
 					Name: interfaceName,
 				},
-				PodIP: "2.2.2.2",
+				PodIP:  "2.2.2.2",
+				PodIPs: [2]string{"2.2.2.2", "fd10:244::8c4c"},
 			}
 			podJson, err := json.Marshal(podCacheInterface)
 			Expect(err).ToNot(HaveOccurred())
@@ -1735,6 +1737,7 @@ var _ = Describe("VirtualMachineInstance", func() {
 				Expect(arg.(*v1.VirtualMachineInstance).Status.Interfaces[0].IP).To(Equal(podCacheInterface.PodIP))
 				Expect(arg.(*v1.VirtualMachineInstance).Status.Interfaces[0].MAC).To(Equal(domain.Status.Interfaces[0].Mac))
 				Expect(arg.(*v1.VirtualMachineInstance).Status.Interfaces[0].IPs[0]).To(Equal(podCacheInterface.PodIP))
+				Expect(arg.(*v1.VirtualMachineInstance).Status.Interfaces[0].IPs[1]).To(Equal(podCacheInterface.PodIPs[1]))
 			}).Return(vmi, nil)
 
 			controller.Execute()

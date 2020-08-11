@@ -103,25 +103,26 @@ func setPodInterfaceCache(iface *v1.Interface, podInterfaceName string, uid stri
 	}
 
 	cache := PodCacheInterface{Iface: iface}
-	podIPv6 := ""
-	indexIPv6 := 0
+
+	indexIPv4 := 0
+	indexIPv6 := 1
+	if !Handler.IsIpv4Primary() {
+		indexIPv4 = 1
+		indexIPv6 = 0
+	}
+
 	for _, addr := range addrList {
 		if addr.IP.IsGlobalUnicast() {
 			addrString := addr.IP.String()
+			index := indexIPv4
 			if netutils.IsIPv6String(addrString) {
-				podIPv6 = addrString
-			} else {
-				cache.PodIP = addrString
-				cache.PodIPs[0] = addrString
-				indexIPv6 = 1
+				index = indexIPv6
 			}
-		}
-	}
 
-	if podIPv6 != "" {
-		cache.PodIPs[indexIPv6] = podIPv6
-		if indexIPv6 == 0 {
-			cache.PodIP = podIPv6
+			cache.PodIPs[index] = addrString
+			if index == 0 {
+				cache.PodIP = addrString
+			}
 		}
 	}
 

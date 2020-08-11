@@ -529,7 +529,9 @@ func (d *VirtualMachineController) updateVMIStatus(vmi *v1.VirtualMachineInstanc
 						IPs:  []string{},
 					}
 					for _, ip := range podIface.PodIPs {
-						ifc.IPs = append(ifc.IPs, ip)
+						if ip != "" {
+							ifc.IPs = append(ifc.IPs, ip)
+						}
 					}
 
 					interfaces = append(interfaces, ifc)
@@ -599,7 +601,9 @@ func (d *VirtualMachineController) updateVMIStatus(vmi *v1.VirtualMachineInstanc
 							newInterface.IPs = []string{}
 
 							for _, ip := range iface.PodIPs {
-								newInterface.IPs = append(newInterface.IPs, ip)
+								if ip != "" {
+									newInterface.IPs = append(newInterface.IPs, ip)
+								}
 							}
 						}
 					}

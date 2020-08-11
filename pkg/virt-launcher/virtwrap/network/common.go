@@ -95,6 +95,7 @@ type NetworkHandler interface {
 	StartDHCP(nic *VIF, serverAddr *netlink.Addr, bridgeInterfaceName string, dhcpOptions *v1.DHCPOptions) error
 	HasNatIptables(proto iptables.Protocol) bool
 	IsIpv6Enabled() bool
+	IsIpv4Primary() bool
 	ConfigureIpv6Forwarding() error
 	IptablesNewChain(proto iptables.Protocol, table, chain string) error
 	IptablesAppendRule(proto iptables.Protocol, table, chain string, rulespec ...string) error
@@ -160,6 +161,14 @@ func (h *NetworkUtilsHandler) HasNatIptables(proto iptables.Protocol) bool {
 func (h *NetworkUtilsHandler) ConfigureIpv6Forwarding() error {
 	_, err := exec.Command("sysctl", "net.ipv6.conf.all.forwarding=1").CombinedOutput()
 	return err
+}
+
+func (h *NetworkUtilsHandler) IsIpv4Primary() bool {
+	podIp := os.Getenv("MY_POD_IP")
+	if netutils.IsIPv6String(podIp) {
+		return false
+	}
+	return true
 }
 
 func (h *NetworkUtilsHandler) IsIpv6Enabled() bool {

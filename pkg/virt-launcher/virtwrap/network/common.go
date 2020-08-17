@@ -165,10 +165,7 @@ func (h *NetworkUtilsHandler) ConfigureIpv6Forwarding() error {
 
 func (h *NetworkUtilsHandler) IsIpv4Primary() bool {
 	podIp := os.Getenv("MY_POD_IP")
-	if netutils.IsIPv6String(podIp) {
-		return false
-	}
-	return true
+	return !netutils.IsIPv6String(podIp)
 }
 
 func (h *NetworkUtilsHandler) IsIpv6Enabled() bool {

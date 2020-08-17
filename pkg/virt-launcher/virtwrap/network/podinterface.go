@@ -111,22 +111,28 @@ func setPodInterfaceCache(iface *v1.Interface, podInterfaceName string, uid stri
 		indexIPv6 = 0
 	}
 
+	var PodIPs [2]string
 	for _, addr := range addrList {
 		if addr.IP.IsGlobalUnicast() {
-			addrString := addr.IP.String()
 			index := indexIPv4
-			if netutils.IsIPv6String(addrString) {
+			if netutils.IsIPv6(addr.IP) {
 				index = indexIPv6
 			}
 
-			cache.PodIPs[index] = addrString
+			PodIPs[index] = addr.IP.String()
 			if index == 0 {
-				cache.PodIP = addrString
+				cache.PodIP = PodIPs[0]
 			}
 		}
 	}
 
 	if cache.PodIP != "" {
+		for _, ip := range PodIPs {
+			if ip != "" {
+				cache.PodIPs = append(cache.PodIPs, ip)
+			}
+		}
+
 		err = writeToCachedFile(cache, util.VMIInterfacepath, uid, iface.Name)
 		if err != nil {
 			log.Log.Reason(err).Errorf("failed to write pod Interface to cache, %s", err.Error())

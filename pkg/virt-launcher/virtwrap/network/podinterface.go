@@ -30,6 +30,8 @@ import (
 	"strconv"
 	"strings"
 
+	netutils "k8s.io/utils/net"
+
 	"kubevirt.io/kubevirt/pkg/util"
 
 	"github.com/coreos/go-iptables/iptables"
@@ -100,15 +102,41 @@ func setPodInterfaceCache(iface *v1.Interface, podInterfaceName string, uid stri
 		return nil
 	}
 
+	cache := PodCacheInterface{Iface: iface}
+
+	indexIPv4 := 0
+	indexIPv6 := 1
+	if !Handler.IsIpv4Primary() {
+		indexIPv4 = 1
+		indexIPv6 = 0
+	}
+
+	var PodIPs [2]string
 	for _, addr := range addrList {
 		if addr.IP.IsGlobalUnicast() {
-			err = writeToCachedFile(PodCacheInterface{Iface: iface, PodIP: addr.IP.String()},
-				util.VMIInterfacepath, uid, iface.Name)
-			if err != nil {
-				log.Log.Reason(err).Errorf("failed to write pod Interface to cache, %s", err.Error())
-				return err
+			index := indexIPv4
+			if netutils.IsIPv6(addr.IP) {
+				index = indexIPv6
 			}
-			return nil
+
+			PodIPs[index] = addr.IP.String()
+			if index == 0 {
+				cache.PodIP = PodIPs[0]
+			}
+		}
+	}
+
+	if cache.PodIP != "" {
+		for _, ip := range PodIPs {
+			if ip != "" {
+				cache.PodIPs = append(cache.PodIPs, ip)
+			}
+		}
+
+		err = writeToCachedFile(cache, util.VMIInterfacepath, uid, iface.Name)
+		if err != nil {
+			log.Log.Reason(err).Errorf("failed to write pod Interface to cache, %s", err.Error())
+			return err
 		}
 	}
 

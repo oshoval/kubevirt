@@ -725,9 +725,9 @@ var _ = Describe("[rfe_id:694][crit:medium][vendor:cnv-qe@redhat.com][level:comp
 
 			for _, serverIP := range serverVMI.Status.Interfaces[0].IPs {
 				if netutils.IsIPv6String(serverIP) {
-					if netutils.IsIPv6String(serverIP) {
-						Skip("Skip till dual stack feature ready (PR on hold)")
-					}
+					// if netutils.IsIPv6String(serverIP) {
+					// 	Skip("Skip till dual stack feature ready (PR on hold)")
+					// }
 
 					By("Testing IPv6")
 					By("Checking traceroute (IPv6) from vmi to cluster nodes gateway")

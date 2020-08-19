@@ -35,6 +35,8 @@ import (
 	lmf "github.com/subgraph/libmacouflage"
 	"github.com/vishvananda/netlink"
 
+	netutils "k8s.io/utils/net"
+
 	v1 "kubevirt.io/client-go/api/v1"
 	"kubevirt.io/client-go/log"
 	"kubevirt.io/kubevirt/pkg/virt-launcher/virtwrap/api"

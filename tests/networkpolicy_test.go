@@ -52,25 +52,17 @@ var _ = Describe("[rfe_id:150][crit:high][vendor:cnv-qe@redhat.com][level:compon
 		Expect(err).ToNot(HaveOccurred())
 
 		vmib = tests.NewRandomVMIWithEphemeralDiskAndUserdata(cd.ContainerDiskFor(cd.ContainerDiskCirros), "#!/bin/bash\necho 'hello'\n")
-		_, err = virtClient.VirtualMachineInstance(tests.NamespaceTestDefault).Create(vmib)
+		vmib, err = virtClient.VirtualMachineInstance(tests.NamespaceTestDefault).Create(vmib)
 		Expect(err).ToNot(HaveOccurred())
 
 		vmic = tests.NewRandomVMIWithEphemeralDiskAndUserdata(cd.ContainerDiskFor(cd.ContainerDiskCirros), "#!/bin/bash\necho 'hello'\n")
 		vmic.Namespace = tests.NamespaceTestAlternative
-		_, err = virtClient.VirtualMachineInstance(tests.NamespaceTestAlternative).Create(vmic)
+		vmic, err = virtClient.VirtualMachineInstance(tests.NamespaceTestAlternative).Create(vmic)
 		Expect(err).ToNot(HaveOccurred())
 
-		tests.WaitForSuccessfulVMIStart(vmia)
-		tests.WaitForSuccessfulVMIStart(vmib)
-		tests.WaitForSuccessfulVMIStart(vmic)
-
-		vmia, err = virtClient.VirtualMachineInstance(tests.NamespaceTestDefault).Get(vmia.Name, &v13.GetOptions{})
-		Expect(err).ToNot(HaveOccurred())
-		vmib, err = virtClient.VirtualMachineInstance(tests.NamespaceTestDefault).Get(vmib.Name, &v13.GetOptions{})
-		Expect(err).ToNot(HaveOccurred())
-		vmic, err = virtClient.VirtualMachineInstance(tests.NamespaceTestAlternative).Get(vmic.Name, &v13.GetOptions{})
-		Expect(err).ToNot(HaveOccurred())
-
+		vmia = tests.WaitUntilVMIReady(vmia, tests.LoggedInCirrosExpecter)
+		vmib = tests.WaitUntilVMIReady(vmib, tests.LoggedInCirrosExpecter)
+		vmic = tests.WaitUntilVMIReadyNamespace(vmic, vmic.Namespace, tests.LoggedInCirrosExpecter)
 	})
 
 	Context("vms limited by Default-deny networkpolicy", func() {

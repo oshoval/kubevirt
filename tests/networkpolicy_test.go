@@ -1,6 +1,9 @@
 package tests_test
 
 import (
+	"fmt"
+	"time"
+
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	v1network "k8s.io/api/networking/v1"
@@ -12,33 +15,23 @@ import (
 	cd "kubevirt.io/kubevirt/tests/containerdisk"
 )
 
-func assertPingSucceedBetweenVMs(vmisrc, vmidst *v1.VirtualMachineInstance) {
-	for _, ip := range vmidst.Status.Interfaces[0].IPs {
-		assertPingSucceed(ip, vmisrc)
-	}
+func pingEventually(fromVmi *v1.VirtualMachineInstance, toIp string) AsyncAssertion {
+	return Eventually(func() error {
+		By(fmt.Sprintf("Pinging from VMI %s/%s to Ip %s", fromVmi.Namespace, fromVmi.Name, toIp))
+		return tests.PingFromVMConsole(fromVmi, toIp)
+	}, 10*time.Second, time.Second)
 }
 
-func assertPingSucceed(ip string, vmi *v1.VirtualMachineInstance) {
-	expecter, err := tests.LoggedInCirrosExpecter(vmi)
-	Expect(err).ToNot(HaveOccurred())
-	defer expecter.Close()
-
-	Expect(tests.PingFromVMConsole(vmi, ip, "-w 3")).To(Succeed())
+func assertPingSucceedBetweenVMs(vmisrc, vmidst *v1.VirtualMachineInstance) {
+	for _, ip := range vmidst.Status.Interfaces[0].IPs {
+		pingEventually(vmisrc, ip).Should(Succeed())
+	}
 }
 
 func assertPingFailBetweenVMs(vmisrc, vmidst *v1.VirtualMachineInstance) {
 	for _, ip := range vmidst.Status.Interfaces[0].IPs {
-		assertPingFail(ip, vmisrc)
+		pingEventually(vmisrc, ip).ShouldNot(Succeed())
 	}
-}
-
-func assertPingFail(ip string, vmi *v1.VirtualMachineInstance) {
-	expecter, err := tests.LoggedInCirrosExpecter(vmi)
-	Expect(err).ToNot(HaveOccurred())
-	defer expecter.Close()
-
-	err = tests.PingFromVMConsole(vmi, ip, "-w 3")
-	Expect(err).To(HaveOccurred())
 }
 
 var _ = Describe("[rfe_id:150][crit:high][vendor:cnv-qe@redhat.com][level:component]Networkpolicy", func() {

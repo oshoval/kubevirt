@@ -12,12 +12,24 @@ import (
 	cd "kubevirt.io/kubevirt/tests/containerdisk"
 )
 
+func assertPingSucceedBetweenVMs(vmisrc, vmidst *v1.VirtualMachineInstance) {
+	for _, ip := range vmidst.Status.Interfaces[0].IPs {
+		assertPingSucceed(ip, vmisrc)
+	}
+}
+
 func assertPingSucceed(ip string, vmi *v1.VirtualMachineInstance) {
 	expecter, err := tests.LoggedInCirrosExpecter(vmi)
 	Expect(err).ToNot(HaveOccurred())
 	defer expecter.Close()
 
 	Expect(tests.PingFromVMConsole(vmi, ip, "-w 3")).To(Succeed())
+}
+
+func assertPingFailBetweenVMs(vmisrc, vmidst *v1.VirtualMachineInstance) {
+	for _, ip := range vmidst.Status.Interfaces[0].IPs {
+		assertPingFail(ip, vmisrc)
+	}
 }
 
 func assertPingFail(ip string, vmi *v1.VirtualMachineInstance) {
@@ -86,17 +98,13 @@ var _ = Describe("[rfe_id:150][crit:high][vendor:cnv-qe@redhat.com][level:compon
 		It("[test_id:1511] should be failed to reach vmia from vmib", func() {
 			By("Connect vmia from vmib")
 			Expect(vmia.Status.Interfaces[0].IPs).NotTo(BeEmpty())
-			for _, ip := range vmia.Status.Interfaces[0].IPs {
-				assertPingFail(ip, vmib)
-			}
+			assertPingFailBetweenVMs(vmib, vmia)
 		})
 
 		It("[test_id:1512] should be failed to reach vmib from vmia", func() {
 			By("Connect vmib from vmia")
 			Expect(vmib.Status.Interfaces[0].IPs).NotTo(BeEmpty())
-			for _, ip := range vmib.Status.Interfaces[0].IPs {
-				assertPingFail(ip, vmia)
-			}
+			assertPingFailBetweenVMs(vmia, vmib)
 		})
 
 		AfterEach(func() {
@@ -133,17 +141,13 @@ var _ = Describe("[rfe_id:150][crit:high][vendor:cnv-qe@redhat.com][level:compon
 		It("[test_id:1513] should be successful to reach vmia from vmib", func() {
 			By("Connect vmia from vmib in same namespace")
 			Expect(vmia.Status.Interfaces[0].IPs).NotTo(BeEmpty())
-			for _, ip := range vmia.Status.Interfaces[0].IPs {
-				assertPingSucceed(ip, vmib)
-			}
+			assertPingSucceedBetweenVMs(vmib, vmia)
 		})
 
 		It("[test_id:1514] should be failed to reach vmia from vmic", func() {
 			By("Connect vmia from vmic in differnet namespace")
 			Expect(vmia.Status.Interfaces[0].IPs).NotTo(BeEmpty())
-			for _, ip := range vmia.Status.Interfaces[0].IPs {
-				assertPingFail(ip, vmic)
-			}
+			assertPingFailBetweenVMs(vmic, vmia)
 		})
 
 		AfterEach(func() {
@@ -176,25 +180,19 @@ var _ = Describe("[rfe_id:150][crit:high][vendor:cnv-qe@redhat.com][level:compon
 		It("[test_id:1515] should be failed to reach vmia from vmic", func() {
 			By("Connect vmia from vmic")
 			Expect(vmia.Status.Interfaces[0].IPs).NotTo(BeEmpty())
-			for _, ip := range vmia.Status.Interfaces[0].IPs {
-				assertPingFail(ip, vmic)
-			}
+			assertPingFailBetweenVMs(vmic, vmia)
 		})
 
 		It("[test_id:1516] should be failed to reach vmia from vmib", func() {
 			By("Connect vmia from vmib")
 			Expect(vmia.Status.Interfaces[0].IPs).NotTo(BeEmpty())
-			for _, ip := range vmia.Status.Interfaces[0].IPs {
-				assertPingFail(ip, vmib)
-			}
+			assertPingFailBetweenVMs(vmib, vmia)
 		})
 
 		It("[test_id:1517] should be successful to reach vmib from vmic", func() {
 			By("Connect vmib from vmic")
 			Expect(vmib.Status.Interfaces[0].IPs).NotTo(BeEmpty())
-			for _, ip := range vmib.Status.Interfaces[0].IPs {
-				assertPingSucceed(ip, vmic)
-			}
+			assertPingSucceedBetweenVMs(vmic, vmib)
 		})
 
 		AfterEach(func() {

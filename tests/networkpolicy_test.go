@@ -1,6 +1,7 @@
 package tests_test
 
 import (
+	"fmt"
 	"time"
 
 	. "github.com/onsi/ginkgo"
@@ -14,17 +15,24 @@ import (
 	cd "kubevirt.io/kubevirt/tests/containerdisk"
 )
 
+func pingEventually(fromVmi *v1.VirtualMachineInstance, toIp string) AsyncAssertion {
+	return Eventually(func() error {
+		By(fmt.Sprintf("Pinging from VMI %s/%s to Ip %s", fromVmi.Namespace, fromVmi.Name, toIp))
+		return tests.PingFromVMConsole(fromVmi, toIp)
+	}, 10*time.Second, time.Second)
+}
+
 func assertPingSucceedBetweenVMs(vmisrc, vmidst *v1.VirtualMachineInstance) {
 	ExpectWithOffset(1, vmidst.Status.Interfaces[0].IPs).NotTo(BeEmpty())
 	for _, ip := range vmidst.Status.Interfaces[0].IPs {
-		Expect(tests.PingFromVMConsole(vmisrc, ip)).To(Succeed(), "Ping between VMs should success")
+		pingEventually(vmisrc, ip).Should(Succeed())
 	}
 }
 
 func assertPingFailBetweenVMs(vmisrc, vmidst *v1.VirtualMachineInstance) {
 	ExpectWithOffset(1, vmidst.Status.Interfaces[0].IPs).NotTo(BeEmpty())
 	for _, ip := range vmidst.Status.Interfaces[0].IPs {
-		Expect(tests.PingFromVMConsole(vmisrc, ip)).To(Not(Succeed()), "Ping between VMs should fail")
+		pingEventually(vmisrc, ip).ShouldNot(Succeed())
 	}
 }
 

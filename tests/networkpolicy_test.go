@@ -19,7 +19,7 @@ func pingEventually(fromVmi *v1.VirtualMachineInstance, toIp string) AsyncAssert
 	return Eventually(func() error {
 		By(fmt.Sprintf("Pinging from VMI %s/%s to Ip %s", fromVmi.Namespace, fromVmi.Name, toIp))
 		return tests.PingFromVMConsole(fromVmi, toIp)
-	}, 10*time.Second, time.Second)
+	}, 15*time.Second, time.Second)
 }
 
 func assertPingSucceedBetweenVMs(vmisrc, vmidst *v1.VirtualMachineInstance) {
@@ -44,16 +44,14 @@ func setupVMIWithEphemeralDiskAndUserdata(virtClient kubecli.KubevirtClient, nam
 	vmi, err = virtClient.VirtualMachineInstance(vmi.Namespace).Create(vmi)
 	Expect(err).ToNot(HaveOccurred())
 
-	vmi = tests.WaitUntilVMIReady(vmi, tests.LoggedInCirrosExpecter)
-
-	return vmi
+	return tests.WaitUntilVMIReady(vmi, tests.LoggedInCirrosExpecter)
 }
 
-func waitForNetworkPolicyCreation(virtClient kubecli.KubevirtClient, vmi *v1.VirtualMachineInstance, policyName string) {
+func waitForNetworkPolicyDeletion(virtClient kubecli.KubevirtClient, vmi *v1.VirtualMachineInstance, policyName string) {
 	Eventually(func() error {
 		_, err := virtClient.NetworkingV1().NetworkPolicies(vmi.Namespace).Get(policyName, v13.GetOptions{})
 		return err
-	}, 10*time.Second).Should(Succeed())
+	}, 10*time.Second).ShouldNot(Succeed())
 }
 
 var _ = Describe("[rfe_id:150][crit:high][vendor:cnv-qe@redhat.com][level:component]Networkpolicy", func() {
@@ -71,6 +69,7 @@ var _ = Describe("[rfe_id:150][crit:high][vendor:cnv-qe@redhat.com][level:compon
 		tests.PanicOnError(err)
 
 		tests.SkipIfUseFlannel(virtClient)
+		tests.SkipNetworkPolicyRunningOnKindInfra()
 		tests.BeforeTestCleanup()
 
 		// Create three vmis, vmia and vmib are in same namespace, vmic is in different namespace
@@ -80,11 +79,12 @@ var _ = Describe("[rfe_id:150][crit:high][vendor:cnv-qe@redhat.com][level:compon
 	})
 
 	Context("vms limited by Default-deny networkpolicy", func() {
+		var networkpolicy *v1network.NetworkPolicy
 
 		BeforeEach(func() {
 			// deny-by-default networkpolicy will deny all the traffice to the vms in the namespace
 			By("Create deny-by-default networkpolicy")
-			networkpolicy := &v1network.NetworkPolicy{
+			networkpolicy = &v1network.NetworkPolicy{
 				ObjectMeta: v13.ObjectMeta{
 					Name: "deny-by-default",
 				},
@@ -95,8 +95,6 @@ var _ = Describe("[rfe_id:150][crit:high][vendor:cnv-qe@redhat.com][level:compon
 			}
 			_, err := virtClient.NetworkingV1().NetworkPolicies(vmia.Namespace).Create(networkpolicy)
 			Expect(err).ToNot(HaveOccurred())
-
-			waitForNetworkPolicyCreation(virtClient, vmia, networkpolicy.Name)
 		})
 
 		It("[test_id:1511] should be failed to reach vmia from vmib", func() {
@@ -111,15 +109,18 @@ var _ = Describe("[rfe_id:150][crit:high][vendor:cnv-qe@redhat.com][level:compon
 
 		AfterEach(func() {
 			Expect(virtClient.NetworkingV1().NetworkPolicies(vmia.Namespace).Delete("deny-by-default", &v13.DeleteOptions{})).To(Succeed())
+			waitForNetworkPolicyDeletion(virtClient, vmia, networkpolicy.Name)
 		})
 
 	})
 
 	Context("vms limited by allow same namespace networkpolicy", func() {
+		var networkpolicy *v1network.NetworkPolicy
+
 		BeforeEach(func() {
 			// allow-same-namespave networkpolicy will only allow the traffice inside the namespace
 			By("Create allow-same-namespace networkpolicy")
-			networkpolicy := &v1network.NetworkPolicy{
+			networkpolicy = &v1network.NetworkPolicy{
 				ObjectMeta: v13.ObjectMeta{
 					Name: "allow-same-namespace",
 				},
@@ -138,8 +139,6 @@ var _ = Describe("[rfe_id:150][crit:high][vendor:cnv-qe@redhat.com][level:compon
 			}
 			_, err := virtClient.NetworkingV1().NetworkPolicies(vmia.Namespace).Create(networkpolicy)
 			Expect(err).ToNot(HaveOccurred())
-
-			waitForNetworkPolicyCreation(virtClient, vmia, networkpolicy.Name)
 		})
 
 		It("[test_id:1513] should be successful to reach vmia from vmib", func() {
@@ -154,15 +153,18 @@ var _ = Describe("[rfe_id:150][crit:high][vendor:cnv-qe@redhat.com][level:compon
 
 		AfterEach(func() {
 			Expect(virtClient.NetworkingV1().NetworkPolicies(vmia.Namespace).Delete("allow-same-namespace", &v13.DeleteOptions{})).To(Succeed())
+			waitForNetworkPolicyDeletion(virtClient, vmia, networkpolicy.Name)
 		})
 
 	})
 
 	Context("vms limited by deny by label networkpolicy", func() {
+		var networkpolicy *v1network.NetworkPolicy
+
 		BeforeEach(func() {
 			// deny-by-label networkpolicy will deny the traffice for the vm which have the same label
 			By("Create deny-by-label networkpolicy")
-			networkpolicy := &v1network.NetworkPolicy{
+			networkpolicy = &v1network.NetworkPolicy{
 				ObjectMeta: v13.ObjectMeta{
 					Name: "deny-by-label",
 				},
@@ -177,8 +179,6 @@ var _ = Describe("[rfe_id:150][crit:high][vendor:cnv-qe@redhat.com][level:compon
 			}
 			_, err := virtClient.NetworkingV1().NetworkPolicies(vmia.Namespace).Create(networkpolicy)
 			Expect(err).ToNot(HaveOccurred())
-
-			waitForNetworkPolicyCreation(virtClient, vmia, networkpolicy.Name)
 		})
 
 		It("[test_id:1515] should be failed to reach vmia from vmic", func() {
@@ -198,6 +198,7 @@ var _ = Describe("[rfe_id:150][crit:high][vendor:cnv-qe@redhat.com][level:compon
 
 		AfterEach(func() {
 			Expect(virtClient.NetworkingV1().NetworkPolicies(vmia.Namespace).Delete("deny-by-label", &v13.DeleteOptions{})).To(Succeed())
+			waitForNetworkPolicyDeletion(virtClient, vmia, networkpolicy.Name)
 		})
 
 	})

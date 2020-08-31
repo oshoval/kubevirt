@@ -2,8 +2,8 @@ package tests_test
 
 import (
 	"fmt"
+	"time"
 
-	expect "github.com/google/goexpect"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	v1network "k8s.io/api/networking/v1"
@@ -17,28 +17,36 @@ import (
 	cd "kubevirt.io/kubevirt/tests/containerdisk"
 )
 
-func assertPingSucceed(ip string, vmi *v1.VirtualMachineInstance) {
-	expecter, err := tests.LoggedInCirrosExpecter(vmi)
-	Expect(err).ToNot(HaveOccurred())
-	defer expecter.Close()
-
-	err = tests.CheckForTextExpecter(vmi, []expect.Batcher{
-		&expect.BSnd{S: fmt.Sprintf("ping -w 3 %s \n", ip)},
-		&expect.BExp{R: "0% packet loss"},
-	}, 60)
-	Expect(err).ToNot(HaveOccurred())
+func pingEventually(fromVmi *v1.VirtualMachineInstance, toIp string) AsyncAssertion {
+	return Eventually(func() error {
+		By(fmt.Sprintf("Pinging from VMI %s/%s to Ip %s", fromVmi.Namespace, fromVmi.Name, toIp))
+		return tests.PingFromVMConsole(fromVmi, toIp)
+	}, 15*time.Second, time.Second)
 }
 
-func assertPingFail(ip string, vmi *v1.VirtualMachineInstance) {
-	expecter, err := tests.LoggedInCirrosExpecter(vmi)
-	Expect(err).ToNot(HaveOccurred())
-	defer expecter.Close()
+func assertPingSucceedBetweenVMs(vmisrc, vmidst *v1.VirtualMachineInstance) {
+	ExpectWithOffset(1, vmidst.Status.Interfaces[0].IPs).NotTo(BeEmpty())
+	for _, ip := range vmidst.Status.Interfaces[0].IPs {
+		pingEventually(vmisrc, ip).Should(Succeed())
+	}
+}
 
-	err = tests.CheckForTextExpecter(vmi, []expect.Batcher{
-		&expect.BSnd{S: fmt.Sprintf("ping -w 3 %s \n", ip)},
-		&expect.BExp{R: "100% packet loss"},
-	}, 60)
+func assertPingFailBetweenVMs(vmisrc, vmidst *v1.VirtualMachineInstance) {
+	ExpectWithOffset(1, vmidst.Status.Interfaces[0].IPs).NotTo(BeEmpty())
+	for _, ip := range vmidst.Status.Interfaces[0].IPs {
+		pingEventually(vmisrc, ip).ShouldNot(Succeed())
+	}
+}
+
+func setupVMIWithEphemeralDiskAndUserdata(virtClient kubecli.KubevirtClient, namespace string, labels map[string]string) *v1.VirtualMachineInstance {
+	var err error
+	vmi := tests.NewRandomVMIWithEphemeralDiskAndUserdata(cd.ContainerDiskFor(cd.ContainerDiskCirros), "#!/bin/bash\necho 'hello'\n")
+	vmi.Namespace = namespace
+	vmi.Labels = labels
+	vmi, err = virtClient.VirtualMachineInstance(vmi.Namespace).Create(vmi)
 	Expect(err).ToNot(HaveOccurred())
+
+	return tests.WaitUntilVMIReady(vmi, tests.LoggedInCirrosExpecter)
 }
 
 func waitForNetworkPolicyDeletion(virtClient kubecli.KubevirtClient, vmi *v1.VirtualMachineInstance, policyName string) {
@@ -68,32 +76,11 @@ var _ = Describe("[rfe_id:150][crit:high][vendor:cnv-qe@redhat.com][level:compon
 		tests.SkipIfUseFlannel(virtClient)
 		tests.SkipNetworkPolicyRunningOnKindInfra()
 		tests.BeforeTestCleanup()
+
 		// Create three vmis, vmia and vmib are in same namespace, vmic is in different namespace
-		vmia = tests.NewRandomVMIWithEphemeralDiskAndUserdata(cd.ContainerDiskFor(cd.ContainerDiskCirros), "#!/bin/bash\necho 'hello'\n")
-		vmia.Labels = map[string]string{"type": "test"}
-		vmia, err = virtClient.VirtualMachineInstance(tests.NamespaceTestDefault).Create(vmia)
-		Expect(err).ToNot(HaveOccurred())
-
-		vmib = tests.NewRandomVMIWithEphemeralDiskAndUserdata(cd.ContainerDiskFor(cd.ContainerDiskCirros), "#!/bin/bash\necho 'hello'\n")
-		_, err = virtClient.VirtualMachineInstance(tests.NamespaceTestDefault).Create(vmib)
-		Expect(err).ToNot(HaveOccurred())
-
-		vmic = tests.NewRandomVMIWithEphemeralDiskAndUserdata(cd.ContainerDiskFor(cd.ContainerDiskCirros), "#!/bin/bash\necho 'hello'\n")
-		vmic.Namespace = tests.NamespaceTestAlternative
-		_, err = virtClient.VirtualMachineInstance(tests.NamespaceTestAlternative).Create(vmic)
-		Expect(err).ToNot(HaveOccurred())
-
-		tests.WaitForSuccessfulVMIStart(vmia)
-		tests.WaitForSuccessfulVMIStart(vmib)
-		tests.WaitForSuccessfulVMIStart(vmic)
-
-		vmia, err = virtClient.VirtualMachineInstance(tests.NamespaceTestDefault).Get(vmia.Name, &v13.GetOptions{})
-		Expect(err).ToNot(HaveOccurred())
-		vmib, err = virtClient.VirtualMachineInstance(tests.NamespaceTestDefault).Get(vmib.Name, &v13.GetOptions{})
-		Expect(err).ToNot(HaveOccurred())
-		vmic, err = virtClient.VirtualMachineInstance(tests.NamespaceTestAlternative).Get(vmic.Name, &v13.GetOptions{})
-		Expect(err).ToNot(HaveOccurred())
-
+		vmia = setupVMIWithEphemeralDiskAndUserdata(virtClient, tests.NamespaceTestDefault, map[string]string{"type": "test"})
+		vmib = setupVMIWithEphemeralDiskAndUserdata(virtClient, tests.NamespaceTestDefault, map[string]string{})
+		vmic = setupVMIWithEphemeralDiskAndUserdata(virtClient, tests.NamespaceTestAlternative, map[string]string{})
 	})
 
 	Context("vms limited by Default-deny networkpolicy", func() {
@@ -117,14 +104,12 @@ var _ = Describe("[rfe_id:150][crit:high][vendor:cnv-qe@redhat.com][level:compon
 
 		It("[test_id:1511] should be failed to reach vmia from vmib", func() {
 			By("Connect vmia from vmib")
-			ip := vmia.Status.Interfaces[0].IP
-			assertPingFail(ip, vmib)
+			assertPingFailBetweenVMs(vmib, vmia)
 		})
 
 		It("[test_id:1512] should be failed to reach vmib from vmia", func() {
 			By("Connect vmib from vmia")
-			ip := vmib.Status.Interfaces[0].IP
-			assertPingFail(ip, vmia)
+			assertPingFailBetweenVMs(vmia, vmib)
 		})
 
 		AfterEach(func() {
@@ -163,14 +148,12 @@ var _ = Describe("[rfe_id:150][crit:high][vendor:cnv-qe@redhat.com][level:compon
 
 		It("[test_id:1513] should be successful to reach vmia from vmib", func() {
 			By("Connect vmia from vmib in same namespace")
-			ip := vmia.Status.Interfaces[0].IP
-			assertPingSucceed(ip, vmib)
+			assertPingSucceedBetweenVMs(vmib, vmia)
 		})
 
 		It("[test_id:1514] should be failed to reach vmia from vmic", func() {
 			By("Connect vmia from vmic in differnet namespace")
-			ip := vmia.Status.Interfaces[0].IP
-			assertPingFail(ip, vmic)
+			assertPingFailBetweenVMs(vmic, vmia)
 		})
 
 		AfterEach(func() {
@@ -205,20 +188,17 @@ var _ = Describe("[rfe_id:150][crit:high][vendor:cnv-qe@redhat.com][level:compon
 
 		It("[test_id:1515] should be failed to reach vmia from vmic", func() {
 			By("Connect vmia from vmic")
-			ip := vmia.Status.Interfaces[0].IP
-			assertPingFail(ip, vmic)
+			assertPingFailBetweenVMs(vmic, vmia)
 		})
 
 		It("[test_id:1516] should be failed to reach vmia from vmib", func() {
 			By("Connect vmia from vmib")
-			ip := vmia.Status.Interfaces[0].IP
-			assertPingFail(ip, vmib)
+			assertPingFailBetweenVMs(vmib, vmia)
 		})
 
 		It("[test_id:1517] should be successful to reach vmib from vmic", func() {
 			By("Connect vmib from vmic")
-			ip := vmib.Status.Interfaces[0].IP
-			assertPingSucceed(ip, vmic)
+			assertPingSucceedBetweenVMs(vmic, vmib)
 		})
 
 		AfterEach(func() {

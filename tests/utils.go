@@ -4843,6 +4843,12 @@ func IsRunningOnKindInfraIPv6() bool {
 	return strings.HasPrefix(provider, "kind-k8s-1.17.0-ipv6")
 }
 
+func SkipNetworkPolicyRunningOnKindInfra() {
+	if IsRunningOnKindInfra() {
+		Skip("Skip Network Policy tests till issue https://github.com/kubevirt/kubevirt/issues/4081 is fixed")
+	}
+}
+
 func SkipPVCTestIfRunnigOnKindInfra() {
 	if IsRunningOnKindInfra() {
 		Skip("Skip PVC tests till PR https://github.com/kubevirt/kubevirt/pull/3171 is merged")

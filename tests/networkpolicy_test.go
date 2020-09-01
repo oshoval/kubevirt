@@ -2,14 +2,14 @@ package tests_test
 
 import (
 	"fmt"
+	"time"
 
 	expect "github.com/google/goexpect"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	v1network "k8s.io/api/networking/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	v13 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 
 	v1 "kubevirt.io/client-go/api/v1"
 	"kubevirt.io/client-go/kubecli"
@@ -39,16 +39,6 @@ func assertPingFail(ip string, vmi *v1.VirtualMachineInstance) {
 		&expect.BExp{R: "100% packet loss"},
 	}, 60)
 	Expect(err).ToNot(HaveOccurred())
-}
-
-func waitForNetworkPolicyDeletion(virtClient kubecli.KubevirtClient, vmi *v1.VirtualMachineInstance, policyName string) {
-	Eventually(func() bool {
-		_, err := virtClient.NetworkingV1().NetworkPolicies(vmi.Namespace).Get(policyName, v13.GetOptions{})
-		if err != nil && !apierrors.IsNotFound(err) {
-			Fail(fmt.Sprintf("Unexpected error waiting for policy deletion: %v", err))
-		}
-		return apierrors.IsNotFound(err)
-	}, 10*time.Second, time.Second).Should(BeTrue(), fmt.Sprintf("Policy %s was not deleted", policyName))
 }
 
 var _ = Describe("[rfe_id:150][crit:high][vendor:cnv-qe@redhat.com][level:component]Networkpolicy", func() {
@@ -115,6 +105,10 @@ var _ = Describe("[rfe_id:150][crit:high][vendor:cnv-qe@redhat.com][level:compon
 			Expect(err).ToNot(HaveOccurred())
 		})
 
+		AfterEach(func() {
+			waitForNetworkPolicyDeletion(vmia, networkpolicy)
+		})
+
 		It("[test_id:1511] should be failed to reach vmia from vmib", func() {
 			By("Connect vmia from vmib")
 			ip := vmia.Status.Interfaces[0].IP
@@ -125,11 +119,6 @@ var _ = Describe("[rfe_id:150][crit:high][vendor:cnv-qe@redhat.com][level:compon
 			By("Connect vmib from vmia")
 			ip := vmib.Status.Interfaces[0].IP
 			assertPingFail(ip, vmia)
-		})
-
-		AfterEach(func() {
-			Expect(virtClient.NetworkingV1().NetworkPolicies(vmia.Namespace).Delete("deny-by-default", &v13.DeleteOptions{})).To(Succeed())
-			waitForNetworkPolicyDeletion(virtClient, vmia, networkpolicy.Name)
 		})
 
 	})
@@ -161,6 +150,10 @@ var _ = Describe("[rfe_id:150][crit:high][vendor:cnv-qe@redhat.com][level:compon
 			Expect(err).ToNot(HaveOccurred())
 		})
 
+		AfterEach(func() {
+			waitForNetworkPolicyDeletion(vmia, networkpolicy)
+		})
+
 		It("[test_id:1513] should be successful to reach vmia from vmib", func() {
 			By("Connect vmia from vmib in same namespace")
 			ip := vmia.Status.Interfaces[0].IP
@@ -171,11 +164,6 @@ var _ = Describe("[rfe_id:150][crit:high][vendor:cnv-qe@redhat.com][level:compon
 			By("Connect vmia from vmic in differnet namespace")
 			ip := vmia.Status.Interfaces[0].IP
 			assertPingFail(ip, vmic)
-		})
-
-		AfterEach(func() {
-			Expect(virtClient.NetworkingV1().NetworkPolicies(vmia.Namespace).Delete("allow-same-namespace", &v13.DeleteOptions{})).To(Succeed())
-			waitForNetworkPolicyDeletion(virtClient, vmia, networkpolicy.Name)
 		})
 
 	})
@@ -203,6 +191,10 @@ var _ = Describe("[rfe_id:150][crit:high][vendor:cnv-qe@redhat.com][level:compon
 			Expect(err).ToNot(HaveOccurred())
 		})
 
+		AfterEach(func() {
+			waitForNetworkPolicyDeletion(vmia, networkpolicy)
+		})
+
 		It("[test_id:1515] should be failed to reach vmia from vmic", func() {
 			By("Connect vmia from vmic")
 			ip := vmia.Status.Interfaces[0].IP
@@ -221,11 +213,24 @@ var _ = Describe("[rfe_id:150][crit:high][vendor:cnv-qe@redhat.com][level:compon
 			assertPingSucceed(ip, vmic)
 		})
 
-		AfterEach(func() {
-			Expect(virtClient.NetworkingV1().NetworkPolicies(vmia.Namespace).Delete("deny-by-label", &v13.DeleteOptions{})).To(Succeed())
-			waitForNetworkPolicyDeletion(virtClient, vmia, networkpolicy.Name)
-		})
-
 	})
 
 })
+
+func waitForNetworkPolicyDeletion(vmi *v1.VirtualMachineInstance, networkpolicy *v1network.NetworkPolicy) {
+	if networkpolicy == nil {
+		return
+	}
+
+	virtClient, err := kubecli.GetKubevirtClient()
+	tests.PanicOnError(err)
+
+	_, err = virtClient.NetworkingV1().NetworkPolicies(vmi.Namespace).Get(networkpolicy.Name, v13.GetOptions{})
+	if err == nil {
+		ExpectWithOffset(1, virtClient.NetworkingV1().NetworkPolicies(vmi.Namespace).Delete(networkpolicy.Name, &v13.DeleteOptions{})).To(Succeed())
+		EventuallyWithOffset(1, func() error {
+			_, err := virtClient.NetworkingV1().NetworkPolicies(vmi.Namespace).Get(networkpolicy.Name, v13.GetOptions{})
+			return err
+		}, 10*time.Second, time.Second).Should(SatisfyAll(HaveOccurred(), WithTransform(errors.IsNotFound, BeTrue())))
+	}
+}

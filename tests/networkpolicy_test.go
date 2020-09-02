@@ -1,7 +1,6 @@
 package tests_test
 
 import (
-	"fmt"
 	"time"
 
 	. "github.com/onsi/ginkgo"
@@ -35,9 +34,13 @@ var _ = Describe("[rfe_id:150][crit:high][vendor:cnv-qe@redhat.com][level:compon
 		tests.BeforeTestCleanup()
 
 		// Create three vmis, vmia and vmib are in same namespace, vmic is in different namespace
-		vmia = setupVMIWithEphemeralDiskAndUserdata(virtClient, tests.NamespaceTestDefault, map[string]string{"type": "test"})
-		vmib = setupVMIWithEphemeralDiskAndUserdata(virtClient, tests.NamespaceTestDefault, map[string]string{})
-		vmic = setupVMIWithEphemeralDiskAndUserdata(virtClient, tests.NamespaceTestAlternative, map[string]string{})
+		vmia = createVMICirros(virtClient, tests.NamespaceTestDefault, map[string]string{"type": "test"})
+		vmib = createVMICirros(virtClient, tests.NamespaceTestDefault, map[string]string{})
+		vmic = createVMICirros(virtClient, tests.NamespaceTestAlternative, map[string]string{})
+
+		vmia = tests.WaitUntilVMIReady(vmia, tests.LoggedInCirrosExpecter)
+		vmib = tests.WaitUntilVMIReady(vmib, tests.LoggedInCirrosExpecter)
+		vmic = tests.WaitUntilVMIReady(vmic, tests.LoggedInCirrosExpecter)
 	})
 
 	Context("vms limited by Default-deny networkpolicy", func() {
@@ -66,12 +69,12 @@ var _ = Describe("[rfe_id:150][crit:high][vendor:cnv-qe@redhat.com][level:compon
 
 		It("[test_id:1511] should be failed to reach vmia from vmib", func() {
 			By("Connect vmia from vmib")
-			pingEventually(vmib, vmia.Status.Interfaces[0].IP).ShouldNot(Succeed())
+			checkPingFail(vmib, vmia.Status.Interfaces[0].IP)
 		})
 
 		It("[test_id:1512] should be failed to reach vmib from vmia", func() {
 			By("Connect vmib from vmia")
-			pingEventually(vmia, vmib.Status.Interfaces[0].IP).ShouldNot(Succeed())
+			checkPingFail(vmia, vmib.Status.Interfaces[0].IP)
 		})
 
 	})
@@ -110,12 +113,12 @@ var _ = Describe("[rfe_id:150][crit:high][vendor:cnv-qe@redhat.com][level:compon
 
 		It("[test_id:1513] should be successful to reach vmia from vmib", func() {
 			By("Connect vmia from vmib in same namespace")
-			pingEventually(vmib, vmia.Status.Interfaces[0].IP).Should(Succeed())
+			checkPingSuccess(vmib, vmia.Status.Interfaces[0].IP)
 		})
 
 		It("[test_id:1514] should be failed to reach vmia from vmic", func() {
 			By("Connect vmia from vmic in differnet namespace")
-			pingEventually(vmic, vmia.Status.Interfaces[0].IP).ShouldNot(Succeed())
+			checkPingFail(vmic, vmia.Status.Interfaces[0].IP)
 		})
 
 	})
@@ -150,24 +153,24 @@ var _ = Describe("[rfe_id:150][crit:high][vendor:cnv-qe@redhat.com][level:compon
 
 		It("[test_id:1515] should be failed to reach vmia from vmic", func() {
 			By("Connect vmia from vmic")
-			pingEventually(vmic, vmia.Status.Interfaces[0].IP).ShouldNot(Succeed())
+			checkPingFail(vmic, vmia.Status.Interfaces[0].IP)
 		})
 
 		It("[test_id:1516] should be failed to reach vmia from vmib", func() {
 			By("Connect vmia from vmib")
-			pingEventually(vmib, vmia.Status.Interfaces[0].IP).ShouldNot(Succeed())
+			checkPingFail(vmib, vmia.Status.Interfaces[0].IP)
 		})
 
 		It("[test_id:1517] should be successful to reach vmib from vmic", func() {
 			By("Connect vmib from vmic")
-			pingEventually(vmic, vmib.Status.Interfaces[0].IP).Should(Succeed())
+			checkPingSuccess(vmic, vmib.Status.Interfaces[0].IP)
 		})
 
 	})
 
 })
 
-func setupVMIWithEphemeralDiskAndUserdata(virtClient kubecli.KubevirtClient, namespace string, labels map[string]string) *v1.VirtualMachineInstance {
+func createVMICirros(virtClient kubecli.KubevirtClient, namespace string, labels map[string]string) *v1.VirtualMachineInstance {
 	var err error
 	vmi := tests.NewRandomVMIWithEphemeralDiskAndUserdata(cd.ContainerDiskFor(cd.ContainerDiskCirros), "#!/bin/bash\necho 'hello'\n")
 	vmi.Namespace = namespace
@@ -175,14 +178,19 @@ func setupVMIWithEphemeralDiskAndUserdata(virtClient kubecli.KubevirtClient, nam
 	vmi, err = virtClient.VirtualMachineInstance(vmi.Namespace).Create(vmi)
 	Expect(err).ToNot(HaveOccurred())
 
-	return tests.WaitUntilVMIReady(vmi, tests.LoggedInCirrosExpecter)
+	return vmi
 }
 
-func pingEventually(fromVmi *v1.VirtualMachineInstance, toIp string) AsyncAssertion {
-	return Eventually(func() error {
-		By(fmt.Sprintf("Pinging from VMI %s/%s to Ip %s", fromVmi.Namespace, fromVmi.Name, toIp))
+func checkPingSuccess(fromVmi *v1.VirtualMachineInstance, toIp string) {
+	Expect(tests.PingFromVMConsole(fromVmi, toIp, "-w 8")).To(Succeed())
+}
+
+func checkPingFail(fromVmi *v1.VirtualMachineInstance, toIp string) {
+	Eventually(func() error {
 		return tests.PingFromVMConsole(fromVmi, toIp)
-	}, 15*time.Second, time.Second)
+	}, 15*time.Second, time.Second).ShouldNot(Succeed())
+
+	Expect(tests.PingFromVMConsole(fromVmi, toIp)).ToNot(Succeed())
 }
 
 func waitForNetworkPolicyDeletion(policy *v1network.NetworkPolicy) {

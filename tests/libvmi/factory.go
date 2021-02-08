@@ -44,12 +44,16 @@ func NewSriovFedora(opts ...Option) *kvirtv1.VirtualMachineInstance {
 	return newFedora(cd.ContainerDiskFedoraSRIOVLane, opts...)
 }
 
+// TODO split this to two functions, since i remove the pass, or add that
+// if pass exists dont do anything
+
 // NewFedora instantiates a new Fedora based VMI configuration with specified
 // containerDisk, building its extra properties based on the specified With*
 // options.
 func newFedora(containerDisk cd.ContainerDisk, opts ...Option) *kvirtv1.VirtualMachineInstance {
 	configurePassword := `#!/bin/bash
-	echo "fedora" |passwd fedora --stdin
+	rm -f /var/lib/cloud/instance/boot-finished
+	# echo "fedora" |passwd fedora --stdin
 	echo `
 
 	fedoraOptions := []Option{

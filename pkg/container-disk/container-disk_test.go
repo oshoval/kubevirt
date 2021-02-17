@@ -173,11 +173,11 @@ var _ = Describe("ContainerDisk", func() {
 				vmi.Spec.Domain.Resources = v1.ResourceRequirements{
 					Requests: k8sv1.ResourceList{
 						k8sv1.ResourceCPU:    resource.MustParse("1"),
-						k8sv1.ResourceMemory: resource.MustParse("64M"),
+						k8sv1.ResourceMemory: resource.MustParse("128Mi"),
 					},
 					Limits: k8sv1.ResourceList{
 						k8sv1.ResourceCPU:    resource.MustParse("1"),
-						k8sv1.ResourceMemory: resource.MustParse("64M"),
+						k8sv1.ResourceMemory: resource.MustParse("128Mi"),
 					},
 				}
 				containers := GenerateContainers(vmi, "libvirt-runtime", "/var/run/libvirt")

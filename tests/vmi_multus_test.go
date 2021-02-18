@@ -1150,8 +1150,8 @@ var _ = Describe("[Serial]Macvtap", func() {
 				migration := tests.NewRandomMigration(serverVMI.Name, serverVMI.GetNamespace())
 				_ = tests.RunMigrationAndExpectCompletion(virtClient, migration, migrationWaitTime)
 
-				By("Going to sleep")
-				time.Sleep(1 * time.Minute)
+				//By("Going to sleep")
+				//time.Sleep(1 * time.Minute)
 
 				Expect(libnet.PingFromVMConsole(clientVMI, serverIP)).To(Succeed(), "connectivity is expected *after* migrating the VMI")
 			})

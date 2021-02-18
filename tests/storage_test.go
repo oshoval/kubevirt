@@ -242,9 +242,6 @@ var _ = Describe("Storage", func() {
 
 				Expect(libnet.WithIPv6(console.LoginToCirros)(vmi)).To(Succeed())
 
-				//By("Going to sleep")
-				//time.Sleep(100 * time.Minute)
-
 				By("Checking that /dev/vdc has a capacity of 2Gi")
 				Expect(console.SafeExpectBatch(vmi, []expect.Batcher{
 					&expect.BSnd{S: "sudo blockdev --getsize64 /dev/vdc\n"},

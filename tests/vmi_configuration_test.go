@@ -2224,7 +2224,11 @@ var _ = Describe("Configurations", func() {
 					DedicatedCPUPlacement: true,
 				}
 				cpuVmi.Spec.Domain.Resources.Requests[k8sv1.ResourceCPU] = resource.MustParse("2")
-				cpuVmi.Spec.Domain.Resources.Limits[k8sv1.ResourceCPU] = resource.MustParse("4")
+				cpuVmi.Spec.Domain.Resources = v1.ResourceRequirements{
+					Limits: kubev1.ResourceList{
+						kubev1.ResourceCPU: resource.MustParse("4"),
+					},
+				}
 
 				By("Starting a VirtualMachineInstance")
 				_, err = virtClient.VirtualMachineInstance(tests.NamespaceTestDefault).Create(cpuVmi)

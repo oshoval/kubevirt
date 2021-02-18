@@ -2199,11 +2199,9 @@ var _ = Describe("Configurations", func() {
 					Cores:                 2,
 					DedicatedCPUPlacement: true,
 				}
-				cpuVmi.Spec.Domain.Resources = v1.ResourceRequirements{
-					Requests: kubev1.ResourceList{
-						kubev1.ResourceCPU: resource.MustParse("3"),
-					},
-				}
+
+				cpuVmi.Spec.Domain.Resources.Requests[k8sv1.ResourceCPU] = resource.MustParse("3")
+
 				By("Starting a VirtualMachineInstance")
 				_, err = virtClient.VirtualMachineInstance(tests.NamespaceTestDefault).Create(cpuVmi)
 				Expect(err).To(HaveOccurred())
@@ -2213,11 +2211,9 @@ var _ = Describe("Configurations", func() {
 				cpuVmi.Spec.Domain.CPU = &v1.CPU{
 					DedicatedCPUPlacement: true,
 				}
-				cpuVmi.Spec.Domain.Resources = v1.ResourceRequirements{
-					Requests: kubev1.ResourceList{
-						kubev1.ResourceCPU: resource.MustParse("300m"),
-					},
-				}
+
+				cpuVmi.Spec.Domain.Resources.Requests[k8sv1.ResourceCPU] = resource.MustParse("300m")
+
 				By("Starting a VirtualMachineInstance")
 				_, err = virtClient.VirtualMachineInstance(tests.NamespaceTestDefault).Create(cpuVmi)
 				Expect(err).To(HaveOccurred())
@@ -2227,14 +2223,9 @@ var _ = Describe("Configurations", func() {
 				cpuVmi.Spec.Domain.CPU = &v1.CPU{
 					DedicatedCPUPlacement: true,
 				}
-				cpuVmi.Spec.Domain.Resources = v1.ResourceRequirements{
-					Requests: kubev1.ResourceList{
-						kubev1.ResourceCPU: resource.MustParse("2"),
-					},
-					Limits: kubev1.ResourceList{
-						kubev1.ResourceCPU: resource.MustParse("4"),
-					},
-				}
+				cpuVmi.Spec.Domain.Resources.Requests[k8sv1.ResourceCPU] = resource.MustParse("2")
+				cpuVmi.Spec.Domain.Resources.Limits[k8sv1.ResourceCPU] = resource.MustParse("4")
+
 				By("Starting a VirtualMachineInstance")
 				_, err = virtClient.VirtualMachineInstance(tests.NamespaceTestDefault).Create(cpuVmi)
 				Expect(err).To(HaveOccurred())

@@ -35,6 +35,7 @@ go_test(
     srcs = [
         "vmi_multus_test.go",
         "vmi_networking_test.go",
+        "vmi_slirp_interface_test.go",
     ],
     embed = [":go_default_library"],
     deps = [

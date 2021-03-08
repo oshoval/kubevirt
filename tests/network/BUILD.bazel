@@ -33,6 +33,7 @@ go_library(
 go_test(
     name = "go_default_test",
     srcs = [
+        "networkpolicy_test.go",
         "vmi_multus_test.go",
         "vmi_networking_test.go",
         "vmi_slirp_interface_test.go",
@@ -58,9 +59,11 @@ go_test(
         "//vendor/github.com/onsi/gomega:go_default_library",
         "//vendor/k8s.io/api/apps/v1:go_default_library",
         "//vendor/k8s.io/api/core/v1:go_default_library",
+        "//vendor/k8s.io/api/networking/v1:go_default_library",
         "//vendor/k8s.io/apimachinery/pkg/api/errors:go_default_library",
         "//vendor/k8s.io/apimachinery/pkg/api/resource:go_default_library",
         "//vendor/k8s.io/apimachinery/pkg/apis/meta/v1:go_default_library",
+        "//vendor/k8s.io/apimachinery/pkg/util/intstr:go_default_library",
         "//vendor/k8s.io/apimachinery/pkg/util/wait:go_default_library",
         "//vendor/k8s.io/utils/net:go_default_library",
         "//vendor/k8s.io/utils/pointer:go_default_library",

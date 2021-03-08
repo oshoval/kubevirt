@@ -26,6 +26,7 @@ import (
 	cd "kubevirt.io/kubevirt/tests/containerdisk"
 	"kubevirt.io/kubevirt/tests/libnet"
 	"kubevirt.io/kubevirt/tests/libvmi"
+	"kubevirt.io/kubevirt/tests/network"
 )
 
 func newLabeledVMI(label string, virtClient kubecli.KubevirtClient, createVMI bool) (vmi *v1.VirtualMachineInstance) {
@@ -48,7 +49,7 @@ func newLabeledVMI(label string, virtClient kubecli.KubevirtClient, createVMI bo
 	return
 }
 
-var _ = Describe("[rfe_id:253][crit:medium][vendor:cnv-qe@redhat.com][level:component][sig-network]Expose", func() {
+var _ = network.SIGDescribe("[rfe_id:253][crit:medium][vendor:cnv-qe@redhat.com][level:component]Expose", func() {
 
 	var virtClient kubecli.KubevirtClient
 	var err error

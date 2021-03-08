@@ -16,9 +16,10 @@ import (
 	"kubevirt.io/kubevirt/tests"
 	cd "kubevirt.io/kubevirt/tests/containerdisk"
 	"kubevirt.io/kubevirt/tests/libnet"
+	"kubevirt.io/kubevirt/tests/network"
 )
 
-var _ = Describe("[ref_id:1182][sig-network]Probes", func() {
+var _ = network.SIGDescribe("[ref_id:1182]Probes", func() {
 	var (
 		err           error
 		virtClient    kubecli.KubevirtClient

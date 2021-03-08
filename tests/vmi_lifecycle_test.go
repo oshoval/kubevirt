@@ -54,6 +54,7 @@ import (
 	"kubevirt.io/kubevirt/tests/flags"
 	"kubevirt.io/kubevirt/tests/libnet"
 	"kubevirt.io/kubevirt/tests/libvmi"
+	"kubevirt.io/kubevirt/tests/network"
 )
 
 func newCirrosVMI() *v1.VirtualMachineInstance {
@@ -76,7 +77,7 @@ func addNodeAffinityToVMI(vmi *v1.VirtualMachineInstance, nodeName string) {
 	}
 }
 
-var _ = Describe("[rfe_id:273][crit:high][vendor:cnv-qe@redhat.com][level:component][sig-network]VMIlifecycle", func() {
+var _ = network.SIGDescribe("[rfe_id:273][crit:high][vendor:cnv-qe@redhat.com][level:component]VMIlifecycle", func() {
 
 	var err error
 	var virtClient kubecli.KubevirtClient

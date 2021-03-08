@@ -52,6 +52,7 @@ import (
 	"kubevirt.io/kubevirt/tests/flags"
 	"kubevirt.io/kubevirt/tests/libnet"
 	"kubevirt.io/kubevirt/tests/libvmi"
+	"kubevirt.io/kubevirt/tests/network"
 )
 
 const (
@@ -72,7 +73,7 @@ const (
 
 const ptpSubnet = "10.1.1.0/24"
 
-var _ = Describe("[Serial][sig-network]Multus", func() {
+var _ = network.SIGDescribe("[Serial]Multus", func() {
 
 	var err error
 	var virtClient kubecli.KubevirtClient
@@ -1022,7 +1023,7 @@ var _ = Describe("[Serial]SRIOV", func() {
 	})
 })
 
-var _ = Describe("[Serial][sig-network]Macvtap", func() {
+var _ = network.SIGDescribe("[Serial]Macvtap", func() {
 	var err error
 	var virtClient kubecli.KubevirtClient
 	var macvtapLowerDevice string

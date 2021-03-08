@@ -37,9 +37,10 @@ import (
 	"kubevirt.io/kubevirt/tests/console"
 	cd "kubevirt.io/kubevirt/tests/containerdisk"
 	"kubevirt.io/kubevirt/tests/libvmi"
+	"kubevirt.io/kubevirt/tests/network"
 )
 
-var _ = Describe("[Serial][sig-network]Slirp Networking", func() {
+var _ = network.SIGDescribe("[Serial]Slirp Networking", func() {
 
 	var err error
 	var virtClient kubecli.KubevirtClient

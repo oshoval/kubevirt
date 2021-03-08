@@ -288,7 +288,7 @@ EOF
 elif [[ $TARGET =~ (cnao|multus) ]]; then
   export KUBEVIRT_E2E_FOCUS="Multus|Networking|VMIlifecycle|Expose|Macvtap"
 elif [[ $TARGET =~ sig-network ]]; then
-  export KUBEVIRT_E2E_FOCUS="sig-network"
+  export KUBEVIRT_E2E_FOCUS="\[sig-network\]"
 elif [[ $TARGET =~ sriov.* ]]; then
   export KUBEVIRT_E2E_FOCUS=SRIOV
 elif [[ $TARGET =~ gpu.* ]]; then

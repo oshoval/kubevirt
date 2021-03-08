@@ -18,7 +18,7 @@ import (
 	"kubevirt.io/kubevirt/tests/libnet"
 )
 
-var _ = Describe("[ref_id:1182]Probes", func() {
+var _ = Describe("[ref_id:1182][sig-network]Probes", func() {
 	var (
 		err           error
 		virtClient    kubecli.KubevirtClient

@@ -45,7 +45,6 @@ import (
 	"k8s.io/utils/pointer"
 
 	storageframework "kubevirt.io/kubevirt/tests/framework/storage"
-	"kubevirt.io/kubevirt/tests/network"
 
 	"k8s.io/apimachinery/pkg/util/strategicpatch"
 
@@ -73,7 +72,7 @@ const (
 	secretDiskSerial  = "D23YZ9W6WA5DJ487"
 )
 
-var _ = network.SIGDescribe("[Serial][rfe_id:393][crit:high][vendor:cnv-qe@redhat.com][level:system] VM Live Migration", func() {
+var _ = Describe("[Serial][rfe_id:393][crit:high][vendor:cnv-qe@redhat.com][level:system] VM Live Migration", func() {
 	var virtClient kubecli.KubevirtClient
 	var originalKubeVirtConfig *v1.KubeVirt
 	var err error

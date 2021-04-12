@@ -130,6 +130,28 @@ func (s *AsyncAgentStore) GetSysInfo() api.DomainSysInfo {
 	}
 }
 
+// GetInterfaceStatus returns the interfaces Guest Agent reported
+func (s *AsyncAgentStore) GetInterfaceStatus() []api.InterfaceStatus {
+	data, ok := s.store.Load(GET_INTERFACES)
+	interfaceStatuses := []api.InterfaceStatus{}
+	if ok {
+		interfaceStatuses = data.([]api.InterfaceStatus)
+	}
+
+	return interfaceStatuses
+}
+
+// GetGuestOSInfo returns the Guest OS version and architecture
+func (s *AsyncAgentStore) GetGuestOSInfo() api.GuestOSInfo {
+	data, ok := s.store.Load(GET_OSINFO)
+	osinfo := api.GuestOSInfo{}
+	if ok {
+		osinfo = data.(api.GuestOSInfo)
+	}
+
+	return osinfo
+}
+
 // GetGA returns guest agent record with its version if present
 func (s *AsyncAgentStore) GetGA() string {
 	data, ok := s.store.Load(GET_AGENT)

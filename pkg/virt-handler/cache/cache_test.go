@@ -297,8 +297,8 @@ var _ = Describe("Domain informer", func() {
 			newDomain.ObjectMeta.Labels = make(map[string]string)
 			newDomain.ObjectMeta.Labels["some-label"] = "some-value"
 			domainManager.EXPECT().ListAllDomains().Return([]*api.Domain{newDomain}, nil)
-			domainManager.EXPECT().GetGuestOSInfo().Return(api.GuestOSInfo{})
-			domainManager.EXPECT().GetInterfaceStatus().Return([]api.InterfaceStatus{})
+			domainManager.EXPECT().GetGuestOSInfo().Return(api.GuestOSInfo{Name: "fedora"})
+			domainManager.EXPECT().GetInterfaceStatus().Return([]api.InterfaceStatus{api.InterfaceStatus{Name: "ethx"}})
 
 			runCMDServer(wg, socketPath, domainManager, stopChan, nil)
 
@@ -323,6 +323,8 @@ var _ = Describe("Domain informer", func() {
 
 			Expect(ok).To(BeTrue())
 			Expect(val).To(Equal("some-value"))
+			Expect(eventDomain.Status.OSInfo.Name).To(Equal("fedora"))
+			Expect(eventDomain.Status.Interfaces[0].Name).To(Equal("ethx"))
 		})
 
 		It("should detect expired legacy watchdog file.", func() {

@@ -35,7 +35,6 @@ import (
 	grpcutil "kubevirt.io/kubevirt/pkg/util/net/grpc"
 	cmdclient "kubevirt.io/kubevirt/pkg/virt-handler/cmd-client"
 	"kubevirt.io/kubevirt/pkg/virt-launcher/virtwrap"
-	agentpoller "kubevirt.io/kubevirt/pkg/virt-launcher/virtwrap/agent-poller"
 	"kubevirt.io/kubevirt/pkg/virt-launcher/virtwrap/api"
 	launcherErrors "kubevirt.io/kubevirt/pkg/virt-launcher/virtwrap/errors"
 )
@@ -293,8 +292,7 @@ func (l *Launcher) GetDomain(_ context.Context, _ *cmdv1.EmptyRequest) (*cmdv1.D
 	if len(list) > 0 {
 		decoratedDomain := list[0]
 		decoratedDomain.Status.OSInfo = l.domainManager.GetGuestOSInfo()
-		interfaceStatuses := getInterfaceStatuses(l, decoratedDomain)
-		decoratedDomain.Status.Interfaces = interfaceStatuses
+		decoratedDomain.Status.Interfaces = getInterfacesStatus(l.domainManager, decoratedDomain.Spec.Devices.Interfaces)
 
 		if domain, err := json.Marshal(decoratedDomain); err != nil {
 			log.Log.Reason(err).Errorf("Failed to marshal domain")
@@ -309,11 +307,8 @@ func (l *Launcher) GetDomain(_ context.Context, _ *cmdv1.EmptyRequest) (*cmdv1.D
 	return response, nil
 }
 
-func getInterfaceStatuses(l *Launcher, domain *api.Domain) []api.InterfaceStatus {
-	interfaceStatuses := l.domainManager.GetInterfaceStatus()
-	interfaceStatuses = agentpoller.MergeAgentStatusesWithDomainData(domain.Spec.Devices.Interfaces, interfaceStatuses)
-
-	return interfaceStatuses
+func getInterfacesStatus(domainManager virtwrap.DomainManager, domainInterfaces []api.Interface) []api.InterfaceStatus {
+	return domainManager.InterfacesStatus(domainInterfaces)
 }
 
 func (l *Launcher) GetDomainStats(_ context.Context, _ *cmdv1.EmptyRequest) (*cmdv1.DomainStatsResponse, error) {

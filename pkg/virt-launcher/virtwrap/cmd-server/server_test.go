@@ -124,7 +124,7 @@ var _ = Describe("Virt remote commands", func() {
 
 			domainManager.EXPECT().ListAllDomains().Return(list, nil)
 			domainManager.EXPECT().GetGuestOSInfo().Return(api.GuestOSInfo{})
-			domainManager.EXPECT().GetInterfaceStatus().Return([]api.InterfaceStatus{})
+			domainManager.EXPECT().InterfacesStatus(list[0].Spec.Devices.Interfaces).Return([]api.InterfaceStatus{})
 			domain, exists, err := client.GetDomain()
 			Expect(err).ToNot(HaveOccurred())
 

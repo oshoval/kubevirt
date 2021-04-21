@@ -200,14 +200,14 @@ func (_mr *_MockDomainManagerRecorder) FinalizeVirtualMachineMigration(arg0 inte
 	return _mr.mock.ctrl.RecordCall(_mr.mock, "FinalizeVirtualMachineMigration", arg0)
 }
 
-func (_m *MockDomainManager) GetInterfaceStatus() []api.InterfaceStatus {
-	ret := _m.ctrl.Call(_m, "GetInterfaceStatus")
+func (_m *MockDomainManager) InterfacesStatus(domainInterfaces []api.Interface) []api.InterfaceStatus {
+	ret := _m.ctrl.Call(_m, "InterfacesStatus", domainInterfaces)
 	ret0, _ := ret[0].([]api.InterfaceStatus)
 	return ret0
 }
 
-func (_mr *_MockDomainManagerRecorder) GetInterfaceStatus() *gomock.Call {
-	return _mr.mock.ctrl.RecordCall(_mr.mock, "GetInterfaceStatus")
+func (_mr *_MockDomainManagerRecorder) InterfacesStatus(arg0 interface{}) *gomock.Call {
+	return _mr.mock.ctrl.RecordCall(_mr.mock, "InterfacesStatus", arg0)
 }
 
 func (_m *MockDomainManager) GetGuestOSInfo() api.GuestOSInfo {

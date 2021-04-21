@@ -100,7 +100,7 @@ type DomainManager interface {
 	GetUsers() ([]v1.VirtualMachineInstanceGuestOSUser, error)
 	GetFilesystems() ([]v1.VirtualMachineInstanceFileSystem, error)
 	FinalizeVirtualMachineMigration(*v1.VirtualMachineInstance) error
-	GetInterfaceStatus() []api.InterfaceStatus
+	InterfacesStatus(domainInterfaces []api.Interface) []api.InterfaceStatus
 	GetGuestOSInfo() api.GuestOSInfo
 }
 
@@ -1367,9 +1367,12 @@ func (l *LibvirtDomainManager) GetGuestInfo() (v1.VirtualMachineInstanceGuestAge
 	return guestInfo, nil
 }
 
-// GetInterfaceStatus returns the interfaces Guest Agent reported
-func (l *LibvirtDomainManager) GetInterfaceStatus() []api.InterfaceStatus {
-	return l.agentData.GetInterfaceStatus()
+// InterfacesStatus returns the interfaces Guest Agent reported
+func (l *LibvirtDomainManager) InterfacesStatus(domainInterfaces []api.Interface) []api.InterfaceStatus {
+	interfaces := l.agentData.GetInterfaceStatus()
+	interfaces = agentpoller.MergeAgentStatusesWithDomainData(domainInterfaces, interfaces)
+
+	return interfaces
 }
 
 // GetGuestOSInfo returns the Guest OS version and architecture

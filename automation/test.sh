@@ -190,20 +190,12 @@ build_images() {
 export NAMESPACE="${NAMESPACE:-kubevirt}"
 
 # Make sure that the VM is properly shut down on exit
-trap '{ make cluster-down; }' EXIT SIGINT SIGTERM SIGSTOP
+#trap '{ make cluster-down; }' EXIT SIGINT SIGTERM SIGSTOP
 
 make cluster-down
 
-# Create .bazelrc to use remote cache
-cat >ci.bazelrc <<EOF
-build --jobs=4
-build --remote_download_toplevel
-EOF
-
 # Build and test images with a custom image name prefix
 export IMAGE_PREFIX_ALT=${IMAGE_PREFIX_ALT:-kv-}
-
-build_images
 
 trap '{ collect_debug_logs; echo "Dump kubevirt state:"; make dump; }' ERR
 make cluster-up
@@ -365,22 +357,7 @@ spec:
 EOF
 fi
 
+echo $ginko_params
 
 # Run functional tests
-FUNC_TEST_ARGS=$ginko_params make functest
-
-# Run REST API coverage based on k8s audit log and openapi spec
-if [ -n "$RUN_REST_COVERAGE" ]; then
-  echo "Generating REST API coverage report"
-  wget https://github.com/mfranczy/crd-rest-coverage/releases/download/v0.1.3/rest-coverage -O _out/rest-coverage
-  chmod +x _out/rest-coverage
-  AUDIT_LOG_PATH=${AUDIT_LOG_PATH-/var/log/k8s-audit/k8s-audit.log}
-  log_dest="$ARTIFACTS_PATH/cluster-audit.log"
-  cli scp "$AUDIT_LOG_PATH" - > $log_dest
-  _out/rest-coverage \
-    --swagger-path "api/openapi-spec/swagger.json" \
-    --audit-log-path $log_dest \
-    --output-path "$ARTIFACTS_PATH/rest-coverage.json" \
-    --ignore-resource-version
-  echo "REST API coverage report generated"
-fi
+# FUNC_TEST_ARGS=$ginko_params make functest

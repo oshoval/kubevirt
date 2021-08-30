@@ -1,0 +1,5 @@
+"Timestamp is enabled"
+hack/dockerized "hack/bazel-fmt.sh && hack/build-func-tests.sh"
+10:52:18: selecting docker as container runtime
+10:52:19: go version go1.13.14 linux/amd64
+10:52:21: 

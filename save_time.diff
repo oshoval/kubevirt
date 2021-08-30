@@ -1,0 +1,19 @@
+diff --git a/cluster-up/cluster/kind/common.sh b/cluster-up/cluster/kind/common.sh
+index a6b9b94..6677278 100755
+--- a/cluster-up/cluster/kind/common.sh
++++ b/cluster-up/cluster/kind/common.sh
+@@ -168,8 +168,13 @@ function setup_kind() {
+         done
+     fi
+ 
++    if [ ! -f cni-plugins-linux-amd64-v0.8.5.tgz ]; then
++        curl -LO https://github.com/containernetworking/plugins/releases/download/v0.8.5/cni-plugins-linux-amd64-v0.8.5.tgz
++    fi
++
+     for node in $(_get_nodes | awk '{print $1}'); do
+-        docker exec $node /bin/sh -c "curl -L https://github.com/containernetworking/plugins/releases/download/v0.8.5/cni-plugins-linux-amd64-v0.8.5.tgz | tar xz -
++        docker cp cni-plugins-linux-amd64-v0.8.5.tgz $node:/
++        docker exec $node /bin/sh -c "tar xf cni-plugins-linux-amd64-v0.8.5.tgz -C /opt/cni/bin"
+     done
+ 
+     echo "Installing Calico CNI plugin"

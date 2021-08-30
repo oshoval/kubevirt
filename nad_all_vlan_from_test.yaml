@@ -1,0 +1,123 @@
+apiVersion: v1
+items:
+- apiVersion: k8s.cni.cncf.io/v1
+  kind: NetworkAttachmentDefinition
+  metadata:
+    annotations:
+      k8s.v1.cni.cncf.io/resourceName: kubevirt.io/sriov_net
+    creationTimestamp: "2021-07-13T07:15:06Z"
+    generation: 1
+    managedFields:
+    - apiVersion: k8s.cni.cncf.io/v1
+      fieldsType: FieldsV1
+      fieldsV1:
+        f:metadata:
+          f:annotations:
+            .: {}
+            f:k8s.v1.cni.cncf.io/resourceName: {}
+        f:spec:
+          .: {}
+          f:config: {}
+      manager: Go-http-client
+      operation: Update
+      time: "2021-07-13T07:15:06Z"
+    name: sriov
+    namespace: kubevirt-test-default1
+    resourceVersion: "4466"
+    selfLink: /apis/k8s.cni.cncf.io/v1/namespaces/kubevirt-test-default1/network-attachment-definitions/sriov
+    uid: 8229c850-8361-4f7d-b1a9-566a4abc8056
+  spec:
+    config: '{ "cniVersion": "0.3.1", "name": "sriov", "type": "sriov", "vlan": 0,
+      "ipam": { "type": "host-local", "subnet": "10.1.1.0/24" } }'
+- apiVersion: k8s.cni.cncf.io/v1
+  kind: NetworkAttachmentDefinition
+  metadata:
+    annotations:
+      k8s.v1.cni.cncf.io/resourceName: kubevirt.io/sriov_net
+    creationTimestamp: "2021-07-13T07:15:06Z"
+    generation: 1
+    managedFields:
+    - apiVersion: k8s.cni.cncf.io/v1
+      fieldsType: FieldsV1
+      fieldsV1:
+        f:metadata:
+          f:annotations:
+            .: {}
+            f:k8s.v1.cni.cncf.io/resourceName: {}
+        f:spec:
+          .: {}
+          f:config: {}
+      manager: Go-http-client
+      operation: Update
+      time: "2021-07-13T07:15:06Z"
+    name: sriov-vlan
+    namespace: kubevirt-test-default1
+    resourceVersion: "4469"
+    selfLink: /apis/k8s.cni.cncf.io/v1/namespaces/kubevirt-test-default1/network-attachment-definitions/sriov-vlan
+    uid: 82d55485-e0dd-4511-ba04-304115a25a9d
+  spec:
+    config: '{ "cniVersion": "0.3.1", "name": "sriov", "type": "sriov", "link_state":
+      "enable", "vlan": 200, "ipam":{}}'
+- apiVersion: k8s.cni.cncf.io/v1
+  kind: NetworkAttachmentDefinition
+  metadata:
+    annotations:
+      k8s.v1.cni.cncf.io/resourceName: kubevirt.io/sriov_net
+    creationTimestamp: "2021-07-13T07:15:06Z"
+    generation: 1
+    managedFields:
+    - apiVersion: k8s.cni.cncf.io/v1
+      fieldsType: FieldsV1
+      fieldsV1:
+        f:metadata:
+          f:annotations:
+            .: {}
+            f:k8s.v1.cni.cncf.io/resourceName: {}
+        f:spec:
+          .: {}
+          f:config: {}
+      manager: Go-http-client
+      operation: Update
+      time: "2021-07-13T07:15:06Z"
+    name: sriov2
+    namespace: kubevirt-test-default1
+    resourceVersion: "4467"
+    selfLink: /apis/k8s.cni.cncf.io/v1/namespaces/kubevirt-test-default1/network-attachment-definitions/sriov2
+    uid: 4aedede5-a0fe-40aa-a017-a7ee599d4968
+  spec:
+    config: '{ "cniVersion": "0.3.1", "name": "sriov", "type": "sriov", "vlan": 0,
+      "ipam": { "type": "host-local", "subnet": "10.1.1.0/24" } }'
+- apiVersion: k8s.cni.cncf.io/v1
+  kind: NetworkAttachmentDefinition
+  metadata:
+    annotations:
+      k8s.v1.cni.cncf.io/resourceName: kubevirt.io/sriov_net
+    creationTimestamp: "2021-07-13T07:15:06Z"
+    generation: 1
+    managedFields:
+    - apiVersion: k8s.cni.cncf.io/v1
+      fieldsType: FieldsV1
+      fieldsV1:
+        f:metadata:
+          f:annotations:
+            .: {}
+            f:k8s.v1.cni.cncf.io/resourceName: {}
+        f:spec:
+          .: {}
+          f:config: {}
+      manager: Go-http-client
+      operation: Update
+      time: "2021-07-13T07:15:06Z"
+    name: sriov3
+    namespace: kubevirt-test-default1
+    resourceVersion: "4468"
+    selfLink: /apis/k8s.cni.cncf.io/v1/namespaces/kubevirt-test-default1/network-attachment-definitions/sriov3
+    uid: c6cd7570-e00f-4ea8-aefc-b2307177e9ec
+  spec:
+    config: '{ "cniVersion": "0.3.1", "name": "sriov", "type": "sriov", "link_state":
+      "enable", "vlan": 0, "ipam": { "type": "host-local", "subnet": "10.1.1.0/24"
+      } }'
+kind: List
+metadata:
+  resourceVersion: ""
+  selfLink: ""

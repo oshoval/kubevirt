@@ -1,0 +1,9 @@
+apiVersion: k8s.cni.cncf.io/v1
+kind: NetworkAttachmentDefinition
+metadata:
+  annotations:
+    k8s.v1.cni.cncf.io/resourceName: kubevirt.io/sriov_net
+  name: sriov-vlan
+spec:
+  config: '{ "cniVersion": "0.3.1", "name": "sriov", "type": "sriov", "link_state":
+    "enable", "vlan": 200, "ipam":{}}'

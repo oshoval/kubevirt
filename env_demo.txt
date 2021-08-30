@@ -1,0 +1,12 @@
+export KUBEVIRT_PROVIDER=kind-1.19-sriov
+export KUBEVIRT_NUM_NODES=2
+export KUBECONFIG=$(./cluster-up/kubeconfig.sh)
+
+# TODO remove the sriov-operator from it
+# export KIND_NODE_IMAGE="quay.io/oshoval/kind_node_bundle:v1.17.0"
+
+# not needed, its the default value
+# just allow to switch between clusters
+# in the same terminal
+# export CLUSTER_NAME=sriov
+

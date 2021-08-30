@@ -1,0 +1,150 @@
+apiVersion: kubevirt.io/v1
+kind: VirtualMachineInstance
+metadata:
+  annotations:
+    kubevirt.io/latest-observed-api-version: v1
+    kubevirt.io/storage-observed-api-version: v1alpha3
+  creationTimestamp: "2021-05-02T06:56:27Z"
+  finalizers:
+  - foregroundDeleteVirtualMachine
+  generation: 9
+  labels:
+    kubevirt.io/nodeName: node01
+  managedFields:
+  - apiVersion: kubevirt.io/v1alpha3
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:spec:
+        .: {}
+        f:domain:
+          .: {}
+          f:devices:
+            .: {}
+            f:disks: {}
+          f:machine:
+            .: {}
+            f:type: {}
+          f:resources:
+            .: {}
+            f:requests:
+              .: {}
+              f:memory: {}
+        f:terminationGracePeriodSeconds: {}
+        f:volumes: {}
+      f:status:
+        .: {}
+        f:guestOSInfo: {}
+    manager: tests.test
+    operation: Update
+    time: "2021-05-02T06:56:27Z"
+  - apiVersion: kubevirt.io/v1alpha3
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:metadata:
+        f:annotations:
+          .: {}
+          f:kubevirt.io/latest-observed-api-version: {}
+          f:kubevirt.io/storage-observed-api-version: {}
+        f:labels:
+          .: {}
+          f:kubevirt.io/nodeName: {}
+      f:status:
+        f:activePods:
+          .: {}
+          f:842875aa-4b82-4e5c-b9ca-33b6513046c0: {}
+        f:conditions: {}
+        f:launcherContainerImageVersion: {}
+        f:nodeName: {}
+        f:qosClass: {}
+    manager: virt-controller
+    operation: Update
+    time: "2021-05-02T06:56:34Z"
+  - apiVersion: kubevirt.io/v1alpha3
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:status:
+        f:interfaces: {}
+        f:migrationMethod: {}
+        f:phase: {}
+        f:volumeStatus: {}
+    manager: virt-handler
+    operation: Update
+    time: "2021-05-02T06:56:34Z"
+  name: testvmi-vnmz7
+  namespace: kubevirt-test-default1
+  resourceVersion: "1157461"
+  selfLink: /apis/kubevirt.io/v1/namespaces/kubevirt-test-default1/virtualmachineinstances/testvmi-vnmz7
+  uid: 8ef5b7eb-aead-40ea-9d29-482e967f017d
+spec:
+  domain:
+    cpu:
+      cores: 1
+      sockets: 1
+      threads: 1
+    devices:
+      disks:
+      - disk:
+          bus: virtio
+        name: disk0
+      - disk:
+          bus: virtio
+        name: disk1
+      interfaces:
+      - bridge: {}
+        name: default
+    features:
+      acpi:
+        enabled: true
+    firmware:
+      uuid: 1144fd2b-4590-4cb3-88e7-22d598d18f61
+    machine:
+      type: q35
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+  networks:
+  - name: default
+    pod: {}
+  terminationGracePeriodSeconds: 0
+  volumes:
+  - containerDisk:
+      image: registry:5000/kubevirt/cirros-container-disk-demo:devel
+      imagePullPolicy: IfNotPresent
+    name: disk0
+  - cloudInitNoCloud:
+      userDataBase64: IyEvYmluL2Jhc2gKZWNobyAnaGVsbG8nCg==
+    name: disk1
+status:
+  activePods:
+    842875aa-4b82-4e5c-b9ca-33b6513046c0: node01
+  conditions:
+  - lastProbeTime: null
+    lastTransitionTime: null
+    message: cannot migrate VMI which does not use masquerade to connect to the pod
+      network
+    reason: InterfaceNotLiveMigratable
+    status: "False"
+    type: LiveMigratable
+  - lastProbeTime: null
+    lastTransitionTime: "2021-05-02T06:56:31Z"
+    status: "True"
+    type: Ready
+  guestOSInfo: {}
+  interfaces:
+  - ipAddress: 10.244.196.172
+    ipAddresses:
+    - 10.244.196.172
+    - fd10:244::c4ab
+    mac: ca:49:c4:a0:5a:b1
+    name: default
+  launcherContainerImageVersion: registry:5000/kubevirt/virt-launcher@sha256:ff62fc1251f194d16a052c0239c80a3b40251097ff98bcb1d881b54346da9332
+  migrationMethod: BlockMigration
+  nodeName: node01
+  phase: Running
+  qosClass: Burstable
+  volumeStatus:
+  - name: disk0
+    target: vda
+  - name: disk1
+    target: vdb

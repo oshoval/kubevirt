@@ -1,0 +1,192 @@
+apiVersion: kubevirt.io/v1
+kind: VirtualMachineInstance
+metadata:
+  annotations:
+    kubevirt.io/latest-observed-api-version: v1
+    kubevirt.io/storage-observed-api-version: v1alpha3
+  creationTimestamp: "2021-07-13T07:15:06Z"
+  finalizers:
+  - foregroundDeleteVirtualMachine
+  generation: 12
+  labels:
+    kubevirt.io/nodeName: sriov-worker
+  managedFields:
+  - apiVersion: kubevirt.io/v1alpha3
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:metadata:
+        f:annotations:
+          .: {}
+          f:kubevirt.io/latest-observed-api-version: {}
+          f:kubevirt.io/storage-observed-api-version: {}
+        f:labels:
+          .: {}
+          f:kubevirt.io/nodeName: {}
+      f:spec:
+        .: {}
+        f:domain:
+          .: {}
+          f:devices:
+            .: {}
+            f:disks: {}
+            f:interfaces: {}
+            f:rng: {}
+          f:resources:
+            .: {}
+            f:requests:
+              .: {}
+              f:memory: {}
+        f:networks: {}
+        f:terminationGracePeriodSeconds: {}
+        f:volumes: {}
+      f:status:
+        .: {}
+        f:activePods:
+          .: {}
+          f:17d2377b-b855-4e40-acb9-5a46c055ce84: {}
+        f:conditions: {}
+        f:guestOSInfo:
+          .: {}
+          f:id: {}
+          f:kernelRelease: {}
+          f:kernelVersion: {}
+          f:name: {}
+          f:prettyName: {}
+          f:version: {}
+          f:versionId: {}
+        f:interfaces: {}
+        f:launcherContainerImageVersion: {}
+        f:migrationMethod: {}
+        f:nodeName: {}
+        f:phase: {}
+        f:phaseTransitionTimestamps: {}
+        f:qosClass: {}
+        f:volumeStatus: {}
+    manager: Go-http-client
+    operation: Update
+    time: "2021-07-13T07:16:05Z"
+  name: testvmi-txhzt
+  namespace: kubevirt-test-default1
+  resourceVersion: "4873"
+  selfLink: /apis/kubevirt.io/v1/namespaces/kubevirt-test-default1/virtualmachineinstances/testvmi-txhzt
+  uid: 10bed65d-1a58-4681-81c6-9f2102931781
+spec:
+  domain:
+    cpu:
+      cores: 1
+      sockets: 1
+      threads: 1
+    devices:
+      disks:
+      - disk:
+          bus: virtio
+        name: disk0
+      - disk:
+          bus: virtio
+        name: disk1
+      interfaces:
+      - masquerade: {}
+        name: default
+      - macAddress: 02:00:00:87:4c:a2
+        name: sriov-vlan
+        sriov: {}
+      rng: {}
+    features:
+      acpi:
+        enabled: true
+    firmware:
+      uuid: 832e297d-ede2-46bc-9bce-524d24aa2503
+    machine:
+      type: q35
+    resources:
+      requests:
+        cpu: 100m
+        memory: 512M
+  networks:
+  - name: default
+    pod: {}
+  - multus:
+      networkName: sriov-vlan
+    name: sriov-vlan
+  terminationGracePeriodSeconds: 0
+  volumes:
+  - containerDisk:
+      image: registry:5000/kubevirt/fedora-sriov-lane-container-disk:devel
+      imagePullPolicy: IfNotPresent
+    name: disk0
+  - cloudInitNoCloud:
+      networkData: |
+        ethernets:
+          sriov-vlan:
+            addresses:
+            - 192.168.0.1/24
+            match:
+              macaddress: 02:00:00:87:4c:a2
+            nameservers:
+              addresses:
+              - 10.96.0.10
+              search:
+              - default.svc.cluster.local
+              - svc.cluster.local
+              - cluster.local
+            set-name: sriov-vlan
+        version: 2
+    name: disk1
+status:
+  activePods:
+    17d2377b-b855-4e40-acb9-5a46c055ce84: sriov-worker
+  conditions:
+  - lastProbeTime: null
+    lastTransitionTime: null
+    message: SRIOVLiveMigration feature-gate is closed, can't migrate VMI with SRIOV
+      interfaces
+    reason: InterfaceNotLiveMigratable
+    status: "False"
+    type: LiveMigratable
+  - lastProbeTime: null
+    lastTransitionTime: "2021-07-13T07:15:44Z"
+    status: "True"
+    type: Ready
+  - lastProbeTime: "2021-07-13T07:16:05Z"
+    lastTransitionTime: null
+    status: "True"
+    type: AgentConnected
+  guestOSInfo:
+    id: fedora
+    kernelRelease: 5.6.6-300.fc32.x86_64
+    kernelVersion: '#1 SMP Tue Apr 21 13:44:19 UTC 2020'
+    name: Fedora
+    prettyName: Fedora 32 (Cloud Edition)
+    version: "32"
+    versionId: "32"
+  interfaces:
+  - interfaceName: eth0
+    ipAddress: 10.244.161.203
+    ipAddresses:
+    - 10.244.161.203
+    mac: 52:54:00:67:62:e3
+    name: default
+  - interfaceName: sriov-vlan
+    ipAddress: 192.168.0.1
+    ipAddresses:
+    - 192.168.0.1
+    - fe80::ff:fe87:4ca2
+    mac: 02:00:00:87:4c:a2
+    name: sriov-vlan
+  launcherContainerImageVersion: registry:5000/kubevirt/virt-launcher@sha256:f7cadcb70cc13f4b1132eaa81277eca73fbff41eab1ecc0da2d0e09bae3707fb
+  migrationMethod: BlockMigration
+  nodeName: sriov-worker
+  phase: Running
+  phaseTransitionTimestamps:
+  - phase: Scheduling
+    phaseTransitionTimestamp: "2021-07-13T07:15:07Z"
+  - phase: Scheduled
+    phaseTransitionTimestamp: "2021-07-13T07:15:44Z"
+  - phase: Running
+    phaseTransitionTimestamp: "2021-07-13T07:15:48Z"
+  qosClass: Burstable
+  volumeStatus:
+  - name: disk0
+    target: vda
+  - name: disk1
+    target: vdb

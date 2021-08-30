@@ -1,0 +1,43 @@
+apiVersion: kubevirt.io/v1
+kind: VirtualMachineInstance
+metadata:
+  name: testvmi1
+spec:
+  domain:
+    cpu:
+      cores: 1
+      sockets: 1
+      threads: 1
+    devices:
+      disks:
+      - disk:
+          bus: virtio
+        name: disk0
+      - disk:
+          bus: virtio
+        name: disk1
+      interfaces:
+      - masquerade: {}
+        name: default
+      rng: {}
+    features:
+      acpi:
+        enabled: true
+    machine:
+      type: q35
+    resources:
+      requests:
+        cpu: 100m
+        memory: 512M
+  networks:
+  - name: default
+    pod: {}
+  terminationGracePeriodSeconds: 0
+  volumes:
+  - containerDisk:
+      image: quay.io/oshoval/fedora-sriov-lane-container-disk-test:devel
+      imagePullPolicy: IfNotPresent
+    name: disk0
+  - cloudInitNoCloud:
+      userData: "#!/bin/bash\n\techo \"fedora\" |passwd fedora --stdin\n\techo "
+    name: disk1

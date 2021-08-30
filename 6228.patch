@@ -1,0 +1,139 @@
+From 35d213ab1a1d5b019693732b5572c34783b689b6 Mon Sep 17 00:00:00 2001
+From: Or Shoval <oshoval@redhat.com>
+Date: Wed, 11 Aug 2021 10:12:00 +0300
+Subject: [PATCH] cluster-sync, Remove prefetch images
+
+Prefetch images is not needed anymore, since
+kubevirtci does it when provisioning.
+The images that are built during cluster-build,
+will simply pulled by their pod according needs.
+
+Signed-off-by: Or Shoval <oshoval@redhat.com>
+---
+ hack/cluster-build.sh   | 21 ----------------
+ hack/cluster-deploy.sh  |  5 ----
+ hack/prefetch-images.sh | 55 -----------------------------------------
+ 3 files changed, 81 deletions(-)
+ delete mode 100644 hack/prefetch-images.sh
+
+diff --git a/hack/cluster-build.sh b/hack/cluster-build.sh
+index 8e1c303f361c..1bcaeb6cdca0 100755
+--- a/hack/cluster-build.sh
++++ b/hack/cluster-build.sh
+@@ -29,7 +29,6 @@ DOCKER_TAG_ALT=${DOCKER_TAG_ALT:-devel_alt}
+ source hack/common.sh
+ source cluster-up/cluster/$KUBEVIRT_PROVIDER/provider.sh
+ source hack/config.sh
+-source hack/prefetch-images.sh
+ 
+ echo "Building ..."
+ 
+@@ -38,24 +37,4 @@ ${KUBEVIRT_PATH}hack/dockerized "BUILD_ARCH=${BUILD_ARCH} DOCKER_PREFIX=${DOCKER
+ ${KUBEVIRT_PATH}hack/dockerized "BUILD_ARCH=${BUILD_ARCH} DOCKER_PREFIX=${DOCKER_PREFIX} DOCKER_TAG=${DOCKER_TAG} DOCKER_TAG_ALT=${DOCKER_TAG_ALT} KUBEVIRT_PROVIDER=${KUBEVIRT_PROVIDER} IMAGE_PREFIX=${IMAGE_PREFIX} IMAGE_PREFIX_ALT=${IMAGE_PREFIX_ALT} ./hack/bazel-push-images.sh"
+ ${KUBEVIRT_PATH}hack/dockerized "BUILD_ARCH=${BUILD_ARCH} DOCKER_PREFIX=${DOCKER_PREFIX} DOCKER_TAG=${DOCKER_TAG} KUBEVIRT_PROVIDER=${KUBEVIRT_PROVIDER} IMAGE_PULL_POLICY=${IMAGE_PULL_POLICY} VERBOSITY=${VERBOSITY} IMAGE_PREFIX=${IMAGE_PREFIX}  IMAGE_PREFIX_ALT=${IMAGE_PREFIX_ALT} feature_gates=${FEATURE_GATES} KUBEVIRT_ONLY_USE_TAGS=${KUBEVIRT_ONLY_USE_TAGS} ./hack/build-manifests.sh"
+ 
+-# Make sure that all nodes use the newest images
+-container=""
+-container_alias=""
+-for arg in ${docker_images}; do
+-    name=${image_prefix}$(basename $arg)
+-    container="${container} ${manifest_docker_prefix}/${name}:${docker_tag} ${manifest_docker_prefix}/${name}:${docker_tag_alt}"
+-    container_alias="${container_alias} ${manifest_docker_prefix}/${name}:${docker_tag} kubevirt/${name}:${docker_tag}"
+-done
+-
+-if [[ $image_prefix_alt ]]; then
+-    for arg in ${docker_images}; do
+-        name=${image_prefix_alt}$(basename $arg)
+-        container="${container} ${manifest_docker_prefix}/${name}:${docker_tag}"
+-        container_alias="${container_alias} ${manifest_docker_prefix}/${name}:${docker_tag} kubevirt/${name}:${docker_tag}"
+-    done
+-fi
+-
+-prefetch-images::pull_on_nodes $container
+-prefetch-images::tag_on_nodes $container_alias
+-
+ echo "Done $0"
+diff --git a/hack/cluster-deploy.sh b/hack/cluster-deploy.sh
+index 9f2e3706f3c1..facee6b7a6ec 100755
+--- a/hack/cluster-deploy.sh
++++ b/hack/cluster-deploy.sh
+@@ -24,7 +24,6 @@ DOCKER_TAG=${DOCKER_TAG:-devel}
+ source hack/common.sh
+ source cluster-up/cluster/$KUBEVIRT_PROVIDER/provider.sh
+ source hack/config.sh
+-source hack/prefetch-images.sh
+ 
+ function dump_kubevirt() {
+     if [ "$?" -ne "0" ]; then
+@@ -47,10 +46,6 @@ function _ensure_cdi_deployment() {
+     # Do not deploy any cdi-operator related objects on
+     # sriov-lane until kubevirt/kubevirt#4120 is fixed
+     if [[ ! "$KUBEVIRT_PROVIDER" =~ sriov.* ]]; then
+-        # prefetch cdi images
+-        cdi_images=$(sed -ne "s/.*\(quay.io[^\s]*\)/\1/p" manifests/testing/cdi*)
+-        prefetch-images::pull_on_nodes $cdi_images
+-
+         _kubectl apply -f - <<EOF
+ ---
+ apiVersion: cdi.kubevirt.io/v1beta1
+diff --git a/hack/prefetch-images.sh b/hack/prefetch-images.sh
+deleted file mode 100644
+index e26e6d55cfc1..000000000000
+--- a/hack/prefetch-images.sh
++++ /dev/null
+@@ -1,55 +0,0 @@
+-set -ex pipefail
+-
+-source hack/common.sh
+-source cluster-up/cluster/$KUBEVIRT_PROVIDER/provider.sh
+-source hack/config.sh
+-
+-function prefetch-images::find_node_names() {
+-    if [[ $KUBEVIRT_PROVIDER == "external" ]] || [[ $KUBEVIRT_PROVIDER =~ kind.* ]] || [[ $KUBEVIRT_PROVIDER == "local" ]]; then
+-        echo "" # in case of external provider / kind we have no control over the nodes
+-    else
+-        local nodes=()
+-        nodes+=($(_kubectl get nodes -o name | sed "s#node/##g"))
+-        echo "${nodes[@]}"
+-    fi
+-}
+-
+-# Given a list of images, find nodes, SSH into each node and execute a command to pull image
+-function prefetch-images::pull_on_nodes() {
+-    local -r containers_to_pull=$@
+-    local -r nodes=$(prefetch-images::find_node_names)
+-    local -r max_retry=10
+-
+-    for node in ${nodes[@]}; do
+-        count=0
+-        until ${KUBEVIRT_PATH}cluster-up/ssh.sh ${node} "echo \"${containers_to_pull}\" | xargs \-\-max-args=1 sudo docker pull"; do
+-            count=$((count + 1))
+-            if [ $count -eq $max_retry ]; then
+-                echo "Failed to 'docker pull' in ${node}" >&2
+-                exit 1
+-            fi
+-            # increase the sleep time with each retry to give it a bit more time in case of repeated failures
+-            sleep $count
+-        done
+-    done
+-}
+-
+-# Given a list of images and tags, find nodes, SSH into each node and execute a command to tag image
+-function prefetch-images::tag_on_nodes() {
+-    local -r container_alias=$@
+-    local -r nodes=$(prefetch-images::find_node_names)
+-    local -r max_retry=10
+-
+-    for node in ${nodes[@]}; do
+-        count=0
+-        until ${KUBEVIRT_PATH}cluster-up/ssh.sh ${node} "echo \"${container_alias}\" | xargs \-\-max-args=2 sudo docker tag"; do
+-            count=$((count + 1))
+-            if [ $count -eq $max_retry ]; then
+-                echo "Failed to 'docker tag' in ${node}" >&2
+-                exit 1
+-            fi
+-            # increase the sleep time with each retry to give it a bit more time in case of repeated failures
+-            sleep $count
+-        done
+-    done
+-}

@@ -1,0 +1,8 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "go_default_library",
+    srcs = ["images.go"],
+    importpath = "kubevirt.io/kubevirt/_kubevirtci/pack8s/internal/pkg/images",
+    visibility = ["//_kubevirtci/pack8s:__subpackages__"],
+)

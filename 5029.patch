@@ -1,0 +1,307 @@
+From 67dfc127875fa8c49c5909a6616322c6717a2932 Mon Sep 17 00:00:00 2001
+From: Or Shoval <oshoval@redhat.com>
+Date: Mon, 15 Feb 2021 11:26:19 +0200
+Subject: [PATCH] Bump kubevirtci
+
+a2b389f Fix typos (#539)
+2b799fe sriov, Parameterize kind version (#540)
+9306210 Reflect current reviewer state (#543)
+4a15921 Allow more than 8 nodes cluster (#542)
+7b758be sriov, Improve CNI downloading (#531)
+a2af136 Subject: [PATCH] enable kind cluster-up works on multi-arch (#537)
+6ca1f85 SRIOV provider fine tunes: Logs and Missing Configurations (#470)
+
+Signed-off-by: Or Shoval <oshoval@redhat.com>
+---
+ cluster-up-sha.txt                            |  2 +-
+ cluster-up/cluster/k8s-1.17/dev-guide.md      |  3 +-
+ cluster-up/cluster/k8s-1.18/dev-guide.md      |  3 +-
+ cluster-up/cluster/k8s-1.19/dev-guide.md      |  3 +-
+ cluster-up/cluster/k8s-1.20/dev-guide.md      |  3 +-
+ .../cluster/kind-k8s-sriov-1.17.0/README.md   | 12 ++++
+ .../cluster/kind-k8s-sriov-1.17.0/provider.sh | 14 +++-
+ cluster-up/cluster/kind/common.sh             | 71 +++++++++++++++----
+ cluster-up/hack/common.sh                     |  2 +-
+ cluster-up/version.txt                        |  2 +-
+ hack/config-default.sh                        |  2 +-
+ 11 files changed, 88 insertions(+), 29 deletions(-)
+
+diff --git a/cluster-up-sha.txt b/cluster-up-sha.txt
+index 85acebacabb..85094fdfab3 100644
+--- a/cluster-up-sha.txt
++++ b/cluster-up-sha.txt
+@@ -1 +1 @@
+-a59b741886df49dd675427344403a84567990599
++3fa819617bcb429e9c9fdd5460e0860633c50b98
+diff --git a/cluster-up/cluster/k8s-1.17/dev-guide.md b/cluster-up/cluster/k8s-1.17/dev-guide.md
+index b8cc1e2adf2..76923504b17 100644
+--- a/cluster-up/cluster/k8s-1.17/dev-guide.md
++++ b/cluster-up/cluster/k8s-1.17/dev-guide.md
+@@ -106,7 +106,7 @@ root         1     0 36 13:39 ?        00:05:22 qemu-system-x86_64 -enable-kvm -
+                 * Apply additional manifests, such as flannel.
+                 * Wait for pods to become ready.
+                 * Pull needed images such as Ceph CSI, fluentd logger.
+-                * Create local volume directiories.
++                * Create local volume directories.
+             * Shutdown the vm and commit its container.
+ 
+ # Flow of K8s cluster-up (1.17 for example)
+@@ -146,4 +146,3 @@ kubectl --kubeconfig=/etc/kubernetes/admin.conf create -f "$custom_manifest"
+     * The new manifest.
+     * Updated cluster-provision/k8s/scripts/provision.sh
+     * Updated cluster-up/cluster/images.sh.
+-
+diff --git a/cluster-up/cluster/k8s-1.18/dev-guide.md b/cluster-up/cluster/k8s-1.18/dev-guide.md
+index a9099a137f7..b412d41e0d4 100644
+--- a/cluster-up/cluster/k8s-1.18/dev-guide.md
++++ b/cluster-up/cluster/k8s-1.18/dev-guide.md
+@@ -106,7 +106,7 @@ root         1     0 36 13:39 ?        00:05:22 qemu-system-x86_64 -enable-kvm -
+                 * Apply additional manifests, such as flannel.
+                 * Wait for pods to become ready.
+                 * Pull needed images such as Ceph CSI, fluentd logger.
+-                * Create local volume directiories.
++                * Create local volume directories.
+             * Shutdown the vm and commit its container.
+ 
+ # Flow of K8s cluster-up (1.18 for example)
+@@ -146,4 +146,3 @@ kubectl --kubeconfig=/etc/kubernetes/admin.conf create -f "$custom_manifest"
+     * The new manifest.
+     * Updated cluster-provision/k8s/scripts/provision.sh
+     * Updated cluster-up/cluster/images.sh.
+-
+diff --git a/cluster-up/cluster/k8s-1.19/dev-guide.md b/cluster-up/cluster/k8s-1.19/dev-guide.md
+index b4ccddd1fc6..9d2a30d798e 100644
+--- a/cluster-up/cluster/k8s-1.19/dev-guide.md
++++ b/cluster-up/cluster/k8s-1.19/dev-guide.md
+@@ -106,7 +106,7 @@ root         1     0 36 13:39 ?        00:05:22 qemu-system-x86_64 -enable-kvm -
+                 * Apply additional manifests, such as flannel.
+                 * Wait for pods to become ready.
+                 * Pull needed images such as Ceph CSI, fluentd logger.
+-                * Create local volume directiories.
++                * Create local volume directories.
+             * Shutdown the vm and commit its container.
+ 
+ # Flow of K8s cluster-up (1.19 for example)
+@@ -146,4 +146,3 @@ kubectl --kubeconfig=/etc/kubernetes/admin.conf create -f "$custom_manifest"
+     * The new manifest.
+     * Updated cluster-provision/k8s/scripts/provision.sh
+     * Updated cluster-up/cluster/images.sh.
+-
+diff --git a/cluster-up/cluster/k8s-1.20/dev-guide.md b/cluster-up/cluster/k8s-1.20/dev-guide.md
+index b29b10a5255..91d7ee115be 100644
+--- a/cluster-up/cluster/k8s-1.20/dev-guide.md
++++ b/cluster-up/cluster/k8s-1.20/dev-guide.md
+@@ -106,7 +106,7 @@ root         1     0 36 13:39 ?        00:05:22 qemu-system-x86_64 -enable-kvm -
+                 * Apply additional manifests, such as flannel.
+                 * Wait for pods to become ready.
+                 * Pull needed images such as Ceph CSI, fluentd logger.
+-                * Create local volume directiories.
++                * Create local volume directories.
+             * Shutdown the vm and commit its container.
+ 
+ # Flow of K8s cluster-up (1.20 for example)
+@@ -146,4 +146,3 @@ kubectl --kubeconfig=/etc/kubernetes/admin.conf create -f "$custom_manifest"
+     * The new manifest.
+     * Updated cluster-provision/k8s/scripts/provision.sh
+     * Updated cluster-up/cluster/images.sh.
+-
+diff --git a/cluster-up/cluster/kind-k8s-sriov-1.17.0/README.md b/cluster-up/cluster/kind-k8s-sriov-1.17.0/README.md
+index 294581b57ea..3d14fa0f3f7 100644
+--- a/cluster-up/cluster/kind-k8s-sriov-1.17.0/README.md
++++ b/cluster-up/cluster/kind-k8s-sriov-1.17.0/README.md
+@@ -30,3 +30,15 @@ make cluster-down
+ 
+ This destroys the whole cluster. 
+ 
++## Setting a custom kind version
++
++In order to use a custom kind image / kind version,
++export KIND_NODE_IMAGE, KIND_VERSION, KUBECTL_PATH before running cluster-up.
++For example in order to use kind 0.9.0 (which is based on k8s-1.19.1) use:
++```bash
++export KIND_NODE_IMAGE="kindest/node:v1.19.1@sha256:98cf5288864662e37115e362b23e4369c8c4a408f99cbc06e58ac30ddc721600"
++export KIND_VERSION="0.9.0"
++export KUBECTL_PATH="/usr/bin/kubectl"
++```
++This allows users to test or use custom images / different kind versions before making them official.
++See https://github.com/kubernetes-sigs/kind/releases for details about node images according to the kind version.
+\ No newline at end of file
+diff --git a/cluster-up/cluster/kind-k8s-sriov-1.17.0/provider.sh b/cluster-up/cluster/kind-k8s-sriov-1.17.0/provider.sh
+index ee1afa93dbb..5beaf5a8499 100755
+--- a/cluster-up/cluster/kind-k8s-sriov-1.17.0/provider.sh
++++ b/cluster-up/cluster/kind-k8s-sriov-1.17.0/provider.sh
+@@ -3,9 +3,12 @@
+ set -e
+ 
+ export CLUSTER_NAME="sriov"
+-export KIND_NODE_IMAGE="kindest/node:v1.17.0"
+ 
+-source ${KUBEVIRTCI_PATH}/cluster/kind/common.sh
++function set_kind_params() {
++    export KIND_NODE_IMAGE="${KIND_NODE_IMAGE:-kindest/node:v1.17.0}"
++    export KIND_VERSION="${KIND_VERSION:-0.7.0}"
++    export KUBECTL_PATH="${KUBECTL_PATH:-/kind/bin/kubectl}"
++}
+ 
+ function up() {
+     if [[ "$KUBEVIRT_NUM_NODES" -ne 2 ]]; then
+@@ -22,5 +25,12 @@ function up() {
+ 
+     kind_up
+ 
++    # remove the rancher.io kind default storageClass
++    _kubectl delete sc standard
++
+     ${KUBEVIRTCI_PATH}/cluster/$KUBEVIRT_PROVIDER/config_sriov.sh
+ }
++
++set_kind_params
++
++source ${KUBEVIRTCI_PATH}/cluster/kind/common.sh
+diff --git a/cluster-up/cluster/kind/common.sh b/cluster-up/cluster/kind/common.sh
+index a6b9b94431a..107279d07f3 100755
+--- a/cluster-up/cluster/kind/common.sh
++++ b/cluster-up/cluster/kind/common.sh
+@@ -2,6 +2,24 @@
+ 
+ set -e
+ 
++# check CPU arch
++PLATFORM=$(uname -m)
++case ${PLATFORM} in
++x86_64* | i?86_64* | amd64*)
++    ARCH="amd64"
++    ;;
++ppc64le)
++    ARCH="ppc64le"
++    ;;
++aarch64* | arm64*)
++    ARCH="arm64"
++    ;;
++*)
++    echo "invalid Arch, only support x86_64, ppc64le, aarch64"
++    exit 1
++    ;;
++esac
++
+ NODE_CMD="docker exec -it -d "
+ export KIND_MANIFESTS_DIR="${KUBEVIRTCI_PATH}/cluster/kind/manifests"
+ export KIND_NODE_CLI="docker exec -it "
+@@ -34,11 +52,13 @@ function _wait_containers_ready {
+ }
+ 
+ function _fetch_kind() {
+-    if [ ! -f ${KUBEVIRTCI_CONFIG_PATH}/$KUBEVIRT_PROVIDER/.kind ]; then
+-        wget https://github.com/kubernetes-sigs/kind/releases/download/v0.7.0/kind-linux-amd64 -O ${KUBEVIRTCI_CONFIG_PATH}/$KUBEVIRT_PROVIDER/.kind
+-        chmod +x ${KUBEVIRTCI_CONFIG_PATH}/$KUBEVIRT_PROVIDER/.kind
++    KIND="${KUBEVIRTCI_CONFIG_PATH}"/"$KUBEVIRT_PROVIDER"/.kind
++    current_kind_version=$($KIND --version |& awk '{print $3}')
++    if [[ $current_kind_version != $KIND_VERSION ]]; then
++        echo "Downloading kind v$KIND_VERSION"
++        curl -LSs https://github.com/kubernetes-sigs/kind/releases/download/v$KIND_VERSION/kind-linux-${ARCH} -o "$KIND"
++        chmod +x "$KIND"
+     fi
+-    KIND=${KUBEVIRTCI_CONFIG_PATH}/$KUBEVIRT_PROVIDER/.kind
+ }
+ 
+ function _configure-insecure-registry-and-reload() {
+@@ -74,6 +94,35 @@ function _configure_registry_on_node() {
+     ${NODE_CMD} $1  sh -c "echo $(docker inspect --format '{{.NetworkSettings.IPAddress }}' $REGISTRY_NAME)'\t'registry >> /etc/hosts"
+ }
+ 
++function _install_cnis {
++    _install_cni_plugins
++    _install_calico_cni
++}
++
++function _install_cni_plugins {
++    local CNI_VERSION="v0.8.5"
++    local CNI_ARCHIVE="cni-plugins-linux-${ARCH}-$CNI_VERSION.tgz"
++    local CNI_URL="https://github.com/containernetworking/plugins/releases/download/$CNI_VERSION/$CNI_ARCHIVE"
++    if [ ! -f ${KUBEVIRTCI_CONFIG_PATH}/$KUBEVIRT_PROVIDER/$CNI_ARCHIVE ]; then
++        echo "Downloading $CNI_ARCHIVE"
++        curl -sSL -o ${KUBEVIRTCI_CONFIG_PATH}/$KUBEVIRT_PROVIDER/$CNI_ARCHIVE $CNI_URL
++    fi
++
++    for node in $(_get_nodes | awk '{print $1}'); do
++        docker cp "${KUBEVIRTCI_CONFIG_PATH}/$KUBEVIRT_PROVIDER/$CNI_ARCHIVE" $node:/
++        docker exec $node /bin/sh -c "tar xf $CNI_ARCHIVE -C /opt/cni/bin"
++    done
++}
++
++function _install_calico_cni {
++    echo "Installing Calico CNI plugin"
++    calico_manifest="$KIND_MANIFESTS_DIR/kube-calico.yaml.in"
++    patched_diff=$(_patch_calico_manifest_diff $calico_manifest)
++    echo "Log Calico manifest diff:"
++    echo "$patched_diff"
++    _patch_calico_manifest "$calico_manifest" "$patched_diff" | _kubectl apply -f -
++}
++
+ function prepare_config() {
+     BASE_PATH=${KUBEVIRTCI_CONFIG_PATH:-$PWD}
+     cat >$BASE_PATH/$KUBEVIRT_PROVIDER/config-provider-$KUBEVIRT_PROVIDER.sh <<EOF
+@@ -154,7 +203,7 @@ function setup_kind() {
+     $KIND --loglevel debug create cluster --retain --name=${CLUSTER_NAME} --config=${KUBEVIRTCI_CONFIG_PATH}/$KUBEVIRT_PROVIDER/kind.yaml --image=$KIND_NODE_IMAGE
+     $KIND get kubeconfig --name=${CLUSTER_NAME} > ${KUBEVIRTCI_CONFIG_PATH}/$KUBEVIRT_PROVIDER/.kubeconfig
+ 
+-    docker cp ${CLUSTER_NAME}-control-plane:/kind/bin/kubectl ${KUBEVIRTCI_CONFIG_PATH}/$KUBEVIRT_PROVIDER/.kubectl
++    docker cp ${CLUSTER_NAME}-control-plane:$KUBECTL_PATH ${KUBEVIRTCI_CONFIG_PATH}/$KUBEVIRT_PROVIDER/.kubectl
+     chmod u+x ${KUBEVIRTCI_CONFIG_PATH}/$KUBEVIRT_PROVIDER/.kubectl
+ 
+     if [ $KUBEVIRT_WITH_KIND_ETCD_IN_MEMORY == "true" ]; then
+@@ -168,16 +217,7 @@ function setup_kind() {
+         done
+     fi
+ 
+-    for node in $(_get_nodes | awk '{print $1}'); do
+-        docker exec $node /bin/sh -c "curl -L https://github.com/containernetworking/plugins/releases/download/v0.8.5/cni-plugins-linux-amd64-v0.8.5.tgz | tar xz -C /opt/cni/bin"
+-    done
+-
+-    echo "Installing Calico CNI plugin"
+-    calico_manifest="$KIND_MANIFESTS_DIR/kube-calico.yaml.in"
+-    patched_diff=$(_patch_calico_manifest_diff $calico_manifest)
+-    echo "Log Calico manifest diff:"
+-    echo "$patched_diff"
+-    _patch_calico_manifest "$calico_manifest" "$patched_diff" | _kubectl apply -f -
++    _install_cnis
+ 
+     _wait_kind_up
+     _kubectl cluster-info
+@@ -284,5 +324,6 @@ function down() {
+         return
+     fi
+     $KIND delete cluster --name=${CLUSTER_NAME}
++    docker rm -f $REGISTRY_NAME >> /dev/null
+     rm -f ${KUBEVIRTCI_CONFIG_PATH}/$KUBEVIRT_PROVIDER/kind.yaml
+ }
+diff --git a/cluster-up/hack/common.sh b/cluster-up/hack/common.sh
+index 6e97deb9e32..c86ca68335c 100644
+--- a/cluster-up/hack/common.sh
++++ b/cluster-up/hack/common.sh
+@@ -34,4 +34,4 @@ provider_prefix=${JOB_NAME:-${KUBEVIRT_PROVIDER}}${EXECUTOR_NUMBER}
+ job_prefix=${JOB_NAME:-kubevirt}${EXECUTOR_NUMBER}
+ 
+ mkdir -p $KUBEVIRTCI_CONFIG_PATH/$KUBEVIRT_PROVIDER
+-KUBEVIRTCI_TAG=2101201235-f99d551
++KUBEVIRTCI_TAG=2102102051-a2b389f
+diff --git a/cluster-up/version.txt b/cluster-up/version.txt
+index 524bab0149f..ccb34f9a136 100644
+--- a/cluster-up/version.txt
++++ b/cluster-up/version.txt
+@@ -1 +1 @@
+-2101201235-f99d551
++2102102051-a2b389f
+diff --git a/hack/config-default.sh b/hack/config-default.sh
+index 6581f086848..67a1003fae4 100644
+--- a/hack/config-default.sh
++++ b/hack/config-default.sh
+@@ -11,7 +11,7 @@ cdi_namespace=cdi
+ image_pull_policy=${IMAGE_PULL_POLICY:-IfNotPresent}
+ verbosity=${VERBOSITY:-2}
+ package_name=${PACKAGE_NAME:-kubevirt-dev}
+-kubevirtci_git_hash="2101201235-f99d551"
++kubevirtci_git_hash="2102102051-a2b389f"
+ 
+ # try to derive csv_version from docker tag. But it must start with x.y.z, without leading v
+ default_csv_version="${docker_tag/latest/0.0.0}"

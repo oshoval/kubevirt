@@ -1,0 +1,9 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "go_default_library",
+    srcs = ["virtwriter.go"],
+    importpath = "kubevirt.io/kubevirt/_kubevirtci/pack8s/pkg/varlinkapi/virtwriter",
+    visibility = ["//visibility:public"],
+    deps = ["//vendor/github.com/pkg/errors:go_default_library"],
+)

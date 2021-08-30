@@ -1,0 +1,113 @@
+apiVersion: v1
+items:
+- apiVersion: kubevirt.io/v1
+  kind: VirtualMachineInstance
+  metadata:
+    annotations:
+      kubevirt.io/latest-observed-api-version: v1
+      kubevirt.io/storage-observed-api-version: v1alpha3
+    creationTimestamp: "2021-01-17T12:28:12Z"
+    finalizers:
+    - foregroundDeleteVirtualMachine
+    generation: 9
+    labels:
+      kubevirt.io/nodeName: sriov-worker
+    name: testvmi-xc46z
+    namespace: kubevirt-test-default1
+    resourceVersion: "6053"
+    selfLink: /apis/kubevirt.io/v1/namespaces/kubevirt-test-default1/virtualmachineinstances/testvmi-xc46z
+    uid: e40a131b-a010-4c7b-bff3-f119f634857c
+  spec:
+    domain:
+      cpu:
+        cores: 1
+        sockets: 1
+        threads: 1
+      devices:
+        disks:
+        - disk:
+            bus: virtio
+          name: disk0
+        - disk:
+            bus: virtio
+          name: disk1
+        interfaces:
+        - masquerade: {}
+          name: default
+        - name: sriov
+          sriov: {}
+        rng: {}
+      features:
+        acpi:
+          enabled: true
+      firmware:
+        uuid: 4769bd93-5313-4bf0-b212-9551c1562346
+      machine:
+        type: q35
+      resources:
+        requests:
+          cpu: 100m
+          memory: 512M
+    networks:
+    - name: default
+      pod: {}
+    - multus:
+        networkName: sriov
+      name: sriov
+    terminationGracePeriodSeconds: 0
+    volumes:
+    - containerDisk:
+        image: registry:5000/kubevirt/fedora-sriov-lane-container-disk:devel
+        imagePullPolicy: IfNotPresent
+      name: disk0
+    - cloudInitNoCloud:
+        networkData: |
+          ethernets:
+            eth0:
+              addresses:
+              - fd10:0:2::2/120
+              dhcp4: true
+              gateway6: fd10:0:2::1
+              match: {}
+              nameservers:
+                addresses:
+                - 10.96.0.10
+                search:
+                - default.svc.cluster.local
+                - svc.cluster.local
+                - cluster.local
+          version: 2
+        userData: "#!/bin/bash\n\techo \"fedora\" |passwd fedora --stdin\n\techo "
+      name: disk1
+  status:
+    activePods:
+      bfc9d5a1-f940-416e-a1f4-4c3fdcfae07d: sriov-worker
+    conditions:
+    - lastProbeTime: null
+      lastTransitionTime: null
+      status: "True"
+      type: LiveMigratable
+    - lastProbeTime: null
+      lastTransitionTime: "2021-01-17T12:29:26Z"
+      status: "True"
+      type: Ready
+    guestOSInfo: {}
+    interfaces:
+    - ipAddress: 10.244.161.203
+      ipAddresses:
+      - 10.244.161.203
+      mac: 02:00:00:6f:7e:0d
+      name: default
+    migrationMethod: BlockMigration
+    nodeName: sriov-worker
+    phase: Running
+    qosClass: Burstable
+    volumeStatus:
+    - name: disk0
+      target: vda
+    - name: disk1
+      target: vdb
+kind: List
+metadata:
+  resourceVersion: ""
+  selfLink: ""

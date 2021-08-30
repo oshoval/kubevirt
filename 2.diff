@@ -1,0 +1,85 @@
+diff --git a/tests/reporter/kubernetes.go b/tests/reporter/kubernetes.go
+index dd6b55a23..79b74c406 100644
+--- a/tests/reporter/kubernetes.go
++++ b/tests/reporter/kubernetes.go
+@@ -424,13 +424,21 @@ func (r *KubernetesReporter) logNodeCommands(virtCli kubecli.KubevirtClient) {
+ 		return
+ 	}
+ 
+-	pods, err := virtCli.CoreV1().Pods(flags.KubeVirtInstallNamespace).List(context.Background(), metav1.ListOptions{LabelSelector: fmt.Sprintf("%s=virt-handler", v12.AppLabel)})
+-	if err != nil {
+-		fmt.Fprintf(os.Stderr, "failed to fetch pods: %v\n", err)
+-		return
+-	}
++	// pods, err := virtCli.CoreV1().Pods(flags.KubeVirtInstallNamespace).List(context.Background(), metav1.ListOptions{LabelSelector: fmt.Sprintf("%s=virt-handler", v12.AppLabel)})
++	// if err != nil {
++	// 	fmt.Fprintf(os.Stderr, "failed to fetch pods: %v\n", err)
++	// 	return
++	// }
++
++	nodes := getNodesWithVirtLauncher(virtCli)
++
++	for _, node := range nodes {
++		pod, err := kubecli.NewVirtHandlerClient(virtCli).Namespace(flags.KubeVirtInstallNamespace).ForNode(node).Pod()
++		if err != nil {
++			fmt.Fprintf(os.Stderr, "failed to get virt-handler pod on node %s: %v", node, err)
++			continue
++		}
+ 
+-	for _, pod := range pods.Items {
+ 		if pod.Status.Phase != "Running" {
+ 			fmt.Fprintf(os.Stderr, "skipping node's pod %s, phase is not Running\n", pod.ObjectMeta.Name)
+ 			continue
+@@ -1024,7 +1032,7 @@ func checkPodComputeContainer(pod v1.Pod) bool {
+ 	return false
+ }
+ 
+-func (r *KubernetesReporter) executeNodeCommands(virtCli kubecli.KubevirtClient, logsdir string, pod v1.Pod) {
++func (r *KubernetesReporter) executeNodeCommands(virtCli kubecli.KubevirtClient, logsdir string, pod *v1.Pod) {
+ 	const networkPrefix = "nsenter -t 1 -n -- "
+ 	//hostPrefix := fmt.Sprintf("%s --mount %s exec -- ", virt_chroot.GetChrootBinaryPath(), virt_chroot.GetChrootMountNamespace())
+ 
+@@ -1038,13 +1046,13 @@ func (r *KubernetesReporter) executeNodeCommands(virtCli kubecli.KubevirtClient,
+ 		{command: networkPrefix + "iptables --list", fileNameSuffix: "iptables"},
+ 
+ 		// TODO fix those on kind (didn't try not on kind, works from code, even without prefix)
+-		//{command: hostPrefix + "/usr/bin/ls -l /proc/1/root/sys/class/net/*/device/virtfn*", fileNameSuffix: "virtfn"},
+-		//{command: hostPrefix + "/usr/bin/grep PCI_SLOT_NAME /proc/1/root/sys/class/net/*/device/uevent", fileNameSuffix: "pci-slot-name"},
++		//{command: "bash -c \"/usr/bin/ls -l /proc/1/root/sys/class/net/*/device/virtfn*\"", fileNameSuffix: "virtfn"},
++		//{command: "bash -c \"/usr/bin/grep PCI_SLOT_NAME /proc/1/root/sys/class/net/*/device/uevent\"", fileNameSuffix: "pci-slot-name"},
+ 
+ 		//{command: hostPrefix + "/bin/cat /1.txt", fileNameSuffix: "cat"},
+ 	}
+ 
+-	r.executeContainerCommands(virtCli, logsdir, &pod, "virt-handler", cmds)
++	r.executeContainerCommands(virtCli, logsdir, pod, "virt-handler", cmds)
+ }
+ 
+ func (r *KubernetesReporter) executeVirtLauncherCommands(virtCli kubecli.KubevirtClient, logsdir string, pod v1.Pod) {
+@@ -1069,7 +1077,15 @@ func (r *KubernetesReporter) executeContainerCommands(virtCli kubecli.KubevirtCl
+ 	}
+ 
+ 	for _, cmd := range cmds {
+-		command := strings.Split(cmd.command, " ")
++		//command := strings.Split(cmd.command, " ")
++
++		//"bash -c \"/usr/bin/ls -l /proc/1/root/sys/class/net/*/device/virtfn*\""
++		command := []string{
++			"bash",
++			"-c",
++			"\"/usr/bin/ls -l /proc/1/root/sys/class/net/*/device/virtfn*\"",
++		}
++		cmd.fileNameSuffix = "virtfn"
+ 
+ 		stdout, stderr, err := tests.ExecuteCommandOnPodV2(virtCli, pod, container, command)
+ 		if err != nil {
+@@ -1087,6 +1103,9 @@ func (r *KubernetesReporter) executeContainerCommands(virtCli kubecli.KubevirtCl
+ 			fmt.Fprintf(os.Stderr, "failed to write %s %s output: %v\n", target, cmd.fileNameSuffix, err)
+ 			continue
+ 		}
++
++		// remove
++		break
+ 	}
+ }
+ 

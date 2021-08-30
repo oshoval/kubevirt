@@ -1,0 +1,15 @@
+apiVersion: k8s.cni.cncf.io/v1
+kind: NetworkAttachmentDefinition
+metadata:
+  annotations:
+    k8s.v1.cni.cncf.io/resourceName: kubevirt.io/sriov_net
+  creationTimestamp: "2021-02-24T08:58:48Z"
+  generation: 1
+  name: sriov
+  namespace: kubevirt-test-default1
+  resourceVersion: "4922"
+  selfLink: /apis/k8s.cni.cncf.io/v1/namespaces/kubevirt-test-default1/network-attachment-definitions/sriov
+  uid: 7efb50e1-d126-4065-a727-aa855cf33535
+spec:
+  config: '{ "cniVersion": "0.3.1", "name": "sriov", "type": "sriov", "ipam": { "type":
+    "host-local", "subnet": "10.1.1.0/24" } }'

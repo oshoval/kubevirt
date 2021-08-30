@@ -1,0 +1,113 @@
+apiVersion: kubevirt.io/v1
+kind: VirtualMachineInstance
+metadata:
+  annotations:
+    kubevirt.io/latest-observed-api-version: v1
+    kubevirt.io/storage-observed-api-version: v1alpha3
+  creationTimestamp: "2021-02-21T14:21:14Z"
+  finalizers:
+  - foregroundDeleteVirtualMachine
+  generation: 9
+  labels:
+    kubevirt.io/nodeName: sriov-worker
+  name: testvmi-g4ltk
+  namespace: kubevirt-test-default1
+  resourceVersion: "15715"
+  selfLink: /apis/kubevirt.io/v1/namespaces/kubevirt-test-default1/virtualmachineinstances/testvmi-g4ltk
+  uid: 5db1474e-5ae7-4030-8efe-4d80778a7320
+spec:
+  domain:
+    cpu:
+      cores: 1
+      sockets: 1
+      threads: 1
+    devices:
+      disks:
+      - disk:
+          bus: virtio
+        name: disk0
+      - disk:
+          bus: virtio
+        name: disk1
+      interfaces:
+      - masquerade: {}
+        name: default
+      - name: sriov
+        sriov: {}
+      rng: {}
+    features:
+      acpi:
+        enabled: true
+    firmware:
+      uuid: aab0daf2-57c3-42fb-97b2-db9b196c5da7
+    machine:
+      type: q35
+    resources:
+      requests:
+        cpu: 100m
+        memory: 512M
+  networks:
+  - name: default
+    pod: {}
+  - multus:
+      networkName: sriov
+    name: sriov
+  terminationGracePeriodSeconds: 0
+  volumes:
+  - containerDisk:
+      image: quay.io/oshoval/fedora-sriov-lane-container-disk-test:devel
+      imagePullPolicy: IfNotPresent
+    name: disk0
+  - cloudInitNoCloud:
+      networkData: |
+        ethernets:
+          eth0:
+            addresses:
+            - fd10:0:2::2/120
+            dhcp4: true
+            gateway6: fd10:0:2::1
+            match: {}
+            nameservers:
+              addresses:
+              - 10.96.0.10
+              search:
+              - default.svc.cluster.local
+              - svc.cluster.local
+              - cluster.local
+        version: 2
+      userData: "#!/bin/bash\n\tsudo setenforce 0\n\tsudo rm -f /var/lib/cloud/instance/boot-finished\n\techo
+        \"fedora\" | passwd fedora --stdin\n\tsudo cp /home/fedora/qemu-guest-agent.service
+        /lib/systemd/system/\n\tsudo systemctl daemon-reload\n\tsudo systemctl start
+        qemu-guest-agent\n\tsudo systemctl enable qemu-guest-agent\n\techo "
+    name: disk1
+status:
+  activePods:
+    a010f89d-ca4c-4332-8d45-fc2f27d0e053: sriov-worker
+  conditions:
+  - lastProbeTime: null
+    lastTransitionTime: null
+    message: Live migration of guest with SR-IOV interfaces is not supported
+    reason: InterfaceNotLiveMigratable
+    status: "False"
+    type: LiveMigratable
+  - lastProbeTime: null
+    lastTransitionTime: "2021-02-21T14:21:23Z"
+    status: "True"
+    type: Ready
+  guestOSInfo: {}
+  interfaces:
+  - ipAddress: 10.244.161.208
+    ipAddresses:
+    - 10.244.161.208
+    mac: 52:54:00:40:3e:64
+    name: default
+  launcherContainerImageVersion: registry:5000/kubevirt/virt-launcher@sha256:e5fa9254fef325517458ac6e275f58b0d880460cb000dc9b5546418019487439
+  migrationMethod: BlockMigration
+  nodeName: sriov-worker
+  phase: Running
+  qosClass: Burstable
+  volumeStatus:
+  - name: disk0
+    target: vda
+  - name: disk1
+    target: vdb

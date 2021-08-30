@@ -1,0 +1,5 @@
+export KUBEVIRT_PROVIDER=kind-k8s-sriov-1.17.0
+export KUBEVIRT_NUM_NODES=2
+export KUBECONFIG=$(./cluster-up/kubeconfig.sh)
+
+export CLUSTER_NAME=sriov2

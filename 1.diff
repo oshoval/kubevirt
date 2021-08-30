@@ -1,0 +1,125 @@
+diff --git a/tests/reporter/kubernetes.go b/tests/reporter/kubernetes.go
+index c192aaa63..dd6b55a23 100644
+--- a/tests/reporter/kubernetes.go
++++ b/tests/reporter/kubernetes.go
+@@ -372,12 +372,18 @@ func (r *KubernetesReporter) logVMICommands(virtCli kubecli.KubevirtClient, isEx
+ 				continue
+ 			}
+ 
+-			if err := prepareVmiConsole(vmi); err != nil {
++			vmiType, err := getVmiType(vmi)
++			if err != nil {
++				fmt.Fprintf(os.Stderr, "failed get vmi type: %v\n", err)
++				continue
++			}
++
++			if err := prepareVmiConsole(vmi, vmiType); err != nil {
+ 				fmt.Fprintf(os.Stderr, "failed login to vmi: %v\n", err)
+ 				continue
+ 			}
+ 
+-			r.executeVmiCommands(vmi, logsdir)
++			r.executeVMICommands(vmi, logsdir, vmiType)
+ 		}
+ 	}
+ }
+@@ -988,13 +994,8 @@ func getVmiType(vmi v12.VirtualMachineInstance) (string, error) {
+ 	return "", fmt.Errorf("unknown type, vmi %s", vmi.ObjectMeta.Name)
+ }
+ 
+-func prepareVmiConsole(vmi v12.VirtualMachineInstance) error {
+-	vmiType, err := getVmiType(vmi)
+-	if err != nil {
+-		return err
+-	}
+-
+-	err = console.SafeExpectBatch(&vmi, []expect.Batcher{
++func prepareVmiConsole(vmi v12.VirtualMachineInstance, vmiType string) error {
++	err := console.SafeExpectBatch(&vmi, []expect.Batcher{
+ 		&expect.BSnd{S: "\n"},
+ 		&expect.BExp{R: console.PromptExpression},
+ 	}, 5)
+@@ -1028,14 +1029,19 @@ func (r *KubernetesReporter) executeNodeCommands(virtCli kubecli.KubevirtClient,
+ 	//hostPrefix := fmt.Sprintf("%s --mount %s exec -- ", virt_chroot.GetChrootBinaryPath(), virt_chroot.GetChrootMountNamespace())
+ 
+ 	cmds := []commands{
+-		{
+-			command:        networkPrefix + "ip address",
+-			fileNameSuffix: "ipaddress",
+-		},
+-		//{
+-		//	command:        hostPrefix + "/bin/cat /1.txt", //TODO remove
+-		//	fileNameSuffix: "cat",
+-		//},
++		{command: networkPrefix + "ip address", fileNameSuffix: "ipaddress"},
++		{command: networkPrefix + "ip link", fileNameSuffix: "iplink"},
++		{command: networkPrefix + "ip route show table all", fileNameSuffix: "iproute"},
++		{command: networkPrefix + "ip neigh show", fileNameSuffix: "ipneigh"},
++		{command: networkPrefix + "bridge -j vlan show", fileNameSuffix: "brvlan"},
++		{command: networkPrefix + "bridge fdb", fileNameSuffix: "brfdb"},
++		{command: networkPrefix + "iptables --list", fileNameSuffix: "iptables"},
++
++		// TODO fix those on kind (didn't try not on kind, works from code, even without prefix)
++		//{command: hostPrefix + "/usr/bin/ls -l /proc/1/root/sys/class/net/*/device/virtfn*", fileNameSuffix: "virtfn"},
++		//{command: hostPrefix + "/usr/bin/grep PCI_SLOT_NAME /proc/1/root/sys/class/net/*/device/uevent", fileNameSuffix: "pci-slot-name"},
++
++		//{command: hostPrefix + "/bin/cat /1.txt", fileNameSuffix: "cat"},
+ 	}
+ 
+ 	r.executeContainerCommands(virtCli, logsdir, &pod, "virt-handler", cmds)
+@@ -1043,10 +1049,14 @@ func (r *KubernetesReporter) executeNodeCommands(virtCli kubecli.KubevirtClient,
+ 
+ func (r *KubernetesReporter) executeVirtLauncherCommands(virtCli kubecli.KubevirtClient, logsdir string, pod v1.Pod) {
+ 	cmds := []commands{
+-		{
+-			command:        "ip address",
+-			fileNameSuffix: "ipaddress",
+-		},
++		{command: "ip address", fileNameSuffix: "ipaddress"},
++		{command: "ip link", fileNameSuffix: "iplink"},
++		{command: "ip route show table all", fileNameSuffix: "iproute"},
++		{command: "ip neigh show", fileNameSuffix: "ipneigh"},
++		{command: "bridge -j vlan show", fileNameSuffix: "brvlan"},
++		{command: "bridge fdb", fileNameSuffix: "brfdb"},
++		{command: "lspci", fileNameSuffix: "lspci"},
++		{command: "env", fileNameSuffix: "env"},
+ 	}
+ 
+ 	r.executeContainerCommands(virtCli, logsdir, &pod, "compute", cmds)
+@@ -1080,16 +1090,27 @@ func (r *KubernetesReporter) executeContainerCommands(virtCli kubecli.KubevirtCl
+ 	}
+ }
+ 
+-func (r *KubernetesReporter) executeVmiCommands(vmi v12.VirtualMachineInstance, logsdir string) {
++func (r *KubernetesReporter) executeVMICommands(vmi v12.VirtualMachineInstance, logsdir string, vmiType string) {
+ 	cmds := []commands{
+-		{
+-			command:        "cat /etc/os-release",
+-			fileNameSuffix: "osrelease",
+-		},
+-		{
+-			command:        "ip address",
+-			fileNameSuffix: "ipaddress",
+-		},
++		{command: "cat /etc/os-release", fileNameSuffix: "osrelease"}, // TODO REMOVE
++		{command: "ip address", fileNameSuffix: "ipaddress"},
++		{command: "ip link", fileNameSuffix: "iplink"},
++		{command: "ip route show table all", fileNameSuffix: "iproute"},
++		{command: "env", fileNameSuffix: "env"},
++		{command: "dmesg", fileNameSuffix: "dmesg"},
++	}
++
++	if vmiType == "fedora" {
++		cmds = append(cmds, []commands{
++			{command: "ip neigh show", fileNameSuffix: "ipneigh"},
++			{command: "bridge -j vlan show", fileNameSuffix: "brvlan"},
++			{command: "bridge fdb", fileNameSuffix: "brfdb"},
++			{command: "nmcli connection", fileNameSuffix: "nmcon"},
++			{command: "nmcli device", fileNameSuffix: "nmdev"},
++			{command: "grep PCI_SLOT_NAME /sys/class/net/*/device/uevent", fileNameSuffix: "pci-slot-name"}}...)
++	} else if vmiType == "cirros" {
++		cmds = append(cmds, []commands{
++			{command: "arp", fileNameSuffix: "arp"}}...)
+ 	}
+ 
+ 	for _, cmd := range cmds {

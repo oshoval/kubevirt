@@ -1,0 +1,69 @@
+apiVersion: kubevirt.io/v1
+kind: VirtualMachineInstance
+metadata:
+  #labels:
+  #  kubevirt.io/nodeName: sriov-worker
+  name: testvmi
+  #namespace: kubevirt-test-default
+spec:
+  domain:
+    cpu:
+      cores: 1
+      sockets: 1
+      threads: 1
+    devices:
+      disks:
+      - disk:
+          bus: virtio
+        name: disk0
+      - disk:
+          bus: virtio
+        name: disk1
+      interfaces:
+      - masquerade: {}
+        name: default
+      #- name: sriov
+      #  sriov: {}
+      rng: {}
+    features:
+      acpi:
+        enabled: true
+    #firmware:
+    #  uuid: 4769bd93-5313-4bf0-b212-9551c1562346
+    machine:
+      type: q35
+    resources:
+      requests:
+        cpu: 100m
+        memory: 512M
+  networks:
+  - name: default
+    pod: {}
+  #- multus:
+  #    networkName: sriov
+  #  name: sriov
+  terminationGracePeriodSeconds: 0
+  volumes:
+  - containerDisk:
+      image: registry:5000/kubevirt/fedora-sriov-lane-container-disk:devel
+      imagePullPolicy: IfNotPresent
+    name: disk0
+  - cloudInitNoCloud:
+      networkData: |
+        ethernets:
+          eth0:
+            addresses:
+            - fd10:0:2::2/120
+            dhcp4: true
+            gateway6: fd10:0:2::1
+            match: {}
+            nameservers:
+              addresses:
+              - 10.96.0.10
+              search:
+              - default.svc.cluster.local
+              - svc.cluster.local
+              - cluster.local
+        version: 2
+      userData: "#!/bin/bash\n\techo \"fedora\" |passwd fedora --stdin\n\techo "
+    name: disk1

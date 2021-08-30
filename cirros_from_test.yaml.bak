@@ -1,0 +1,155 @@
+apiVersion: kubevirt.io/v1
+kind: VirtualMachineInstance
+metadata:
+  annotations:
+    kubevirt.io/latest-observed-api-version: v1
+    kubevirt.io/storage-observed-api-version: v1alpha3
+  creationTimestamp: "2021-02-17T13:38:38Z"
+  finalizers:
+  - foregroundDeleteVirtualMachine
+  generation: 9
+  labels:
+    kubevirt.io/nodeName: node02
+  managedFields:
+  - apiVersion: kubevirt.io/v1alpha3
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:spec:
+        .: {}
+        f:domain:
+          .: {}
+          f:devices:
+            .: {}
+            f:disks: {}
+            f:interfaces: {}
+          f:machine:
+            .: {}
+            f:type: {}
+          f:resources:
+            .: {}
+            f:requests:
+              .: {}
+              f:memory: {}
+        f:networks: {}
+        f:terminationGracePeriodSeconds: {}
+        f:volumes: {}
+      f:status:
+        .: {}
+        f:guestOSInfo: {}
+    manager: tests.test
+    operation: Update
+    time: "2021-02-17T13:38:38Z"
+  - apiVersion: kubevirt.io/v1alpha3
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:metadata:
+        f:annotations:
+          .: {}
+          f:kubevirt.io/latest-observed-api-version: {}
+          f:kubevirt.io/storage-observed-api-version: {}
+        f:labels:
+          .: {}
+          f:kubevirt.io/nodeName: {}
+      f:status:
+        f:activePods:
+          .: {}
+          f:2eec6f9c-054c-4307-905f-e48ab2caa673: {}
+        f:conditions: {}
+        f:nodeName: {}
+        f:qosClass: {}
+    manager: virt-controller
+    operation: Update
+    time: "2021-02-17T13:38:46Z"
+  - apiVersion: kubevirt.io/v1alpha3
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:status:
+        f:interfaces: {}
+        f:migrationMethod: {}
+        f:phase: {}
+        f:volumeStatus: {}
+    manager: virt-handler
+    operation: Update
+    time: "2021-02-17T13:38:46Z"
+  name: testvmi-pqzc7
+  namespace: kubevirt-test-default1
+  resourceVersion: "8871"
+  selfLink: /apis/kubevirt.io/v1/namespaces/kubevirt-test-default1/virtualmachineinstances/testvmi-pqzc7
+  uid: e254f560-3019-4ae7-8226-171a7fe7f280
+spec:
+  domain:
+    cpu:
+      cores: 1
+      sockets: 1
+      threads: 1
+    devices:
+      disks:
+      - disk:
+          bus: virtio
+        name: disk0
+      - disk:
+          bus: virtio
+        name: disk1
+      - disk:
+          bus: virtio
+        name: emptydisk1
+      interfaces:
+      - masquerade: {}
+        name: default
+    features:
+      acpi:
+        enabled: true
+    firmware:
+      uuid: d753a437-4c0a-4293-976d-359e5a26b2dc
+    machine:
+      type: q35
+    resources:
+      requests:
+        cpu: 100m
+        memory: 64M
+  networks:
+  - name: default
+    pod: {}
+  terminationGracePeriodSeconds: 0
+  volumes:
+  - containerDisk:
+      image: registry:5000/kubevirt/cirros-container-disk-demo:devel
+      imagePullPolicy: IfNotPresent
+    name: disk0
+  - cloudInitNoCloud:
+      userDataBase64: ZWNobyBoaSE=
+    name: disk1
+  - emptyDisk:
+      capacity: 2Gi
+    name: emptydisk1
+status:
+  activePods:
+    2eec6f9c-054c-4307-905f-e48ab2caa673: node02
+  conditions:
+  - lastProbeTime: null
+    lastTransitionTime: null
+    status: "True"
+    type: LiveMigratable
+  - lastProbeTime: null
+    lastTransitionTime: "2021-02-17T13:38:43Z"
+    status: "True"
+    type: Ready
+  guestOSInfo: {}
+  interfaces:
+  - ipAddress: 10.244.140.91
+    ipAddresses:
+    - 10.244.140.91
+    - fd10:244::8c5a
+    mac: 52:54:00:10:f5:6a
+    name: default
+  migrationMethod: BlockMigration
+  nodeName: node02
+  phase: Running
+  qosClass: Burstable
+  volumeStatus:
+  - name: disk0
+    target: vda
+  - name: disk1
+    target: vdb
+  - name: emptydisk1
+    target: vdc

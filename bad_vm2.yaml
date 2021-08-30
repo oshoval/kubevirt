@@ -1,0 +1,29 @@
+apiVersion: kubevirt.io/v1
+kind: VirtualMachineInstance
+metadata:
+  name: testvmi-bad2
+spec:
+  domain:
+    cpu:
+      cores: 1
+      sockets: 1
+      threads: 1
+    devices:
+      interfaces:
+      - masquerade: {}
+        name: default
+    features:
+      acpi:
+        enabled: true
+    firmware:
+      uuid: 45bc6ca0-0c90-5b4c-8186-d47a5217c94e
+    machine:
+      type: q35
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+  networks:
+  - name: default
+    pod: {}
+  terminationGracePeriodSeconds: 60

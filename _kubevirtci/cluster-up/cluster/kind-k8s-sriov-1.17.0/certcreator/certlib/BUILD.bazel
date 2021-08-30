@@ -1,0 +1,8 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "go_default_library",
+    srcs = ["selfsign.go"],
+    importpath = "kubevirt.io/kubevirt/_kubevirtci/cluster-up/cluster/kind-k8s-sriov-1.17.0/certcreator/certlib",
+    visibility = ["//visibility:public"],
+)

@@ -1,0 +1,66 @@
+apiVersion: kubevirt.io/v1
+kind: VirtualMachineInstance
+metadata:
+  name: testvmi
+spec:
+  domain:
+    cpu:
+      cores: 1
+      sockets: 1
+      threads: 1
+    devices:
+      disks:
+      - disk:
+          bus: virtio
+        name: disk0
+      - disk:
+          bus: virtio
+        name: disk1
+      interfaces:
+      - masquerade: {}
+        name: default
+      - macAddress: 02:00:00:87:4c:a2
+        name: sriov-vlan
+        sriov: {}
+      rng: {}
+    features:
+      acpi:
+        enabled: true
+    firmware:
+      uuid: 832e297d-ede2-46bc-9bce-524d24aa2503
+    machine:
+      type: q35
+    resources:
+      requests:
+        cpu: 100m
+        memory: 1024M
+  networks:
+  - name: default
+    pod: {}
+  - multus:
+      networkName: sriov-vlan
+    name: sriov-vlan
+  terminationGracePeriodSeconds: 0
+  volumes:
+  - containerDisk:
+      image: registry:5000/kubevirt/fedora-sriov-lane-container-disk:devel
+      imagePullPolicy: IfNotPresent
+    name: disk0
+  - cloudInitNoCloud:
+      networkData: |
+        ethernets:
+          sriov-vlan:
+            addresses:
+            - 192.168.0.1/24
+            match:
+              macaddress: 02:00:00:87:4c:a2
+            nameservers:
+              addresses:
+              - 10.96.0.10
+              search:
+              - default.svc.cluster.local
+              - svc.cluster.local
+              - cluster.local
+            set-name: sriov-vlan
+        version: 2
+    name: disk1

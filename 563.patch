@@ -1,0 +1,1357 @@
+From 8fda9138eecef7f2bd34eb6c4598c09e14530ca8 Mon Sep 17 00:00:00 2001
+From: Or Mergi <ormergi@redhat.com>
+Date: Thu, 18 Feb 2021 19:50:14 +0200
+Subject: [PATCH 1/4] SRIOV provider, config_sriov.sh: export sriov-operator
+ code
+
+config_sriov.sh script is very log, complex, and hard
+to maintain.
+This change export all the code that related to
+sriov-network-operator deployment to another script
+'sriov_operator.sh', it will be used as library.
+
+config_sriov.sh logic does not change.
+
+Signed-off-by: Or Mergi <ormergi@redhat.com>
+---
+ .../kind-k8s-sriov-1.17.0/config_sriov.sh     | 222 +-----------------
+ .../kind-k8s-sriov-1.17.0/sriov_operator.sh   | 212 +++++++++++++++++
+ 2 files changed, 220 insertions(+), 214 deletions(-)
+ create mode 100644 cluster-up/cluster/kind-k8s-sriov-1.17.0/sriov_operator.sh
+
+diff --git a/cluster-up/cluster/kind-k8s-sriov-1.17.0/config_sriov.sh b/cluster-up/cluster/kind-k8s-sriov-1.17.0/config_sriov.sh
+index 30e04c2c4..028196f2e 100755
+--- a/cluster-up/cluster/kind-k8s-sriov-1.17.0/config_sriov.sh
++++ b/cluster-up/cluster/kind-k8s-sriov-1.17.0/config_sriov.sh
+@@ -2,224 +2,18 @@
+ set -xe
+ 
+ source ${KUBEVIRTCI_PATH}/cluster/kind/common.sh
++source sriov_operator.sh
+ 
+ MANIFESTS_DIR="${KUBEVIRTCI_PATH}/cluster/$KUBEVIRT_PROVIDER/manifests"
+-CERTCREATOR_PATH="${KUBEVIRTCI_PATH}/cluster/$KUBEVIRT_PROVIDER/certcreator"
+-KUBECONFIG_PATH="${KUBEVIRTCI_CONFIG_PATH}/$KUBEVIRT_PROVIDER/.kubeconfig"
+ 
+ MASTER_NODE="${CLUSTER_NAME}-control-plane"
+ WORKER_NODE_ROOT="${CLUSTER_NAME}-worker"
+ PF_COUNT_PER_NODE=${PF_COUNT_PER_NODE:-1}
+ 
+-OPERATOR_GIT_HASH=8d3c30de8ec5a9a0c9eeb84ea0aa16ba2395cd68  # release-4.4
+ SRIOV_OPERATOR_NAMESPACE="sriov-network-operator"
+ 
+ [ $PF_COUNT_PER_NODE -le 0 ] && echo "FATAL: PF_COUNT_PER_NODE must be a positive integer" >&2 && exit 1
+ 
+-# This function gets a command and invoke it repeatedly
+-# until the command return code is zero
+-function retry {
+-  local -r tries=$1
+-  local -r wait_time=$2
+-  local -r action=$3
+-  local -r wait_message=$4
+-  local -r waiting_action=$5
+-
+-  eval $action
+-  local return_code=$?
+-  for i in $(seq $tries); do
+-    if [[ $return_code -ne 0 ]] ; then
+-      echo "[$i/$tries] $wait_message"
+-      eval $waiting_action
+-      sleep $wait_time
+-      eval $action
+-      return_code=$?
+-    else
+-      return 0
+-    fi
+-  done
+-
+-  return 1
+-}
+-
+-function wait_for_daemonSet {
+-  local name=$1
+-  local namespace=$2
+-  local required_replicas=$3
+-
+-  if [[ $namespace != "" ]];then
+-    namespace="-n $namespace"
+-  fi
+-
+-  if (( required_replicas < 0 )); then
+-      echo "DaemonSet $name ready replicas number is not valid: $required_replicas"
+-      return 1
+-  fi
+-
+-  local -r tries=30
+-  local -r wait_time=10
+-  wait_message="Waiting for DaemonSet $name to have $required_replicas ready replicas"
+-  error_message="DaemonSet $name did not have $required_replicas ready replicas"
+-  action="_kubectl get daemonset $namespace $name -o jsonpath='{.status.numberReady}' | grep -w $required_replicas"
+-
+-  if ! retry "$tries" "$wait_time" "$action" "$wait_message";then
+-    echo $error_message
+-    return 1
+-  fi
+-
+-  return  0
+-}
+-
+-function wait_k8s_object {
+-  local -r object_type=$1
+-  local -r name=$2
+-  local namespace=$3
+-
+-  local -r tries=60
+-  local -r wait_time=3
+-
+-  local -r wait_message="Waiting for $object_type $name"
+-  local -r error_message="$object_type $name at $namespace namespace found"
+-
+-  if [[ $namespace != "" ]];then
+-    namespace="-n $namespace"
+-  fi
+-
+-  local -r action="_kubectl get $object_type $name $namespace -o custom-columns=NAME:.metadata.name --no-headers"
+-
+-  if ! retry "$tries" "$wait_time" "$action" "$wait_message";then
+-    echo $error_message
+-    return  1
+-  fi
+-
+-  return 0
+-}
+-
+-function _check_all_pods_ready() {
+-  all_pods_ready_condition=$(_kubectl get pods -A --no-headers -o custom-columns=':.status.conditions[?(@.type == "Ready")].status')
+-  if [ "$?" -eq 0 ]; then
+-    pods_not_ready_count=$(grep -cw False <<< "$all_pods_ready_condition")
+-    if [ "$pods_not_ready_count" -eq 0 ]; then
+-      return 0
+-    fi
+-  fi
+-
+-  return 1
+-}
+-
+-# not using kubectl wait since with the sriov operator the pods get restarted a couple of times and this is
+-# more reliable
+-function wait_pods_ready {
+-  local -r tries=30
+-  local -r wait_time=10
+-
+-  local -r wait_message="Waiting for all pods to become ready.."
+-  local -r error_message="Not all pods were ready after $(($tries*$wait_time)) seconds"
+-
+-  local -r get_pods='_kubectl get pods --all-namespaces'
+-  local -r action="_check_all_pods_ready"
+-
+-  set +x
+-  trap "set -x" RETURN
+-
+-  if ! retry "$tries" "$wait_time" "$action" "$wait_message" "$get_pods"; then
+-    echo $error_message
+-    return 1
+-  fi
+-
+-  echo "all pods are ready"
+-  return 0
+-}
+-
+-function wait_allocatable_resource {
+-  local -r node=$1
+-  local resource_name=$2
+-  local -r expected_value=$3
+-
+-  local -r tries=48
+-  local -r wait_time=10
+-
+-  local -r wait_message="wait for $node node to have allocatable resource: $resource_name: $expected_value"
+-  local -r error_message="node $node doesnt have allocatable resource $resource_name:$expected_value"
+-
+-  # it is necessary to add '\' before '.' in the resource name.
+-  resource_name=$(echo $resource_name | sed s/\\./\\\\\./g)
+-  local -r action='_kubectl get node $node -ocustom-columns=:.status.allocatable.$resource_name --no-headers | grep -w $expected_value'
+-
+-  if ! retry $tries $wait_time "$action" "$wait_message"; then
+-    echo $error_message
+-    return 1
+-  fi
+-
+-  return 0
+-}
+-
+-function deploy_multus {
+-  echo 'Deploying Multus'
+-  _kubectl create -f $MANIFESTS_DIR/multus.yaml
+-
+-  echo 'Waiting for Multus deployment to become ready'
+-  daemonset_name=$(cat $MANIFESTS_DIR/multus.yaml | grep -i daemonset -A 3 | grep -Po '(?<=name:) \S*amd64$')
+-  daemonset_namespace=$(cat $MANIFESTS_DIR/multus.yaml | grep -i daemonset -A 3 | grep -Po '(?<=namespace:) \S*$' | head -1)
+-  required_replicas=$(_kubectl get daemonset $daemonset_name -n $daemonset_namespace -o jsonpath='{.status.desiredNumberScheduled}')
+-  wait_for_daemonSet $daemonset_name $daemonset_namespace $required_replicas
+-
+-  return 0
+-}
+-
+-function deploy_sriov_operator {
+-  echo 'Downloading the SR-IOV operator'
+-  operator_path=${KUBEVIRTCI_CONFIG_PATH}/$KUBEVIRT_PROVIDER/sriov-network-operator-${OPERATOR_GIT_HASH}
+-  if [ ! -d $operator_path ]; then
+-    curl -LSs https://github.com/openshift/sriov-network-operator/archive/${OPERATOR_GIT_HASH}/sriov-network-operator.tar.gz | tar xz -C ${KUBEVIRTCI_CONFIG_PATH}/$KUBEVIRT_PROVIDER/
+-  fi
+-
+-  echo 'Installing the SR-IOV operator'
+-  pushd $operator_path
+-    export RELEASE_VERSION=4.4
+-    export SRIOV_NETWORK_OPERATOR_IMAGE=quay.io/openshift/origin-sriov-network-operator:${RELEASE_VERSION}
+-    export SRIOV_NETWORK_CONFIG_DAEMON_IMAGE=quay.io/openshift/origin-sriov-network-config-daemon:${RELEASE_VERSION}
+-    export SRIOV_NETWORK_WEBHOOK_IMAGE=quay.io/openshift/origin-sriov-network-webhook:${RELEASE_VERSION}
+-    export NETWORK_RESOURCES_INJECTOR_IMAGE=quay.io/openshift/origin-sriov-dp-admission-controller:${RELEASE_VERSION}
+-    export SRIOV_CNI_IMAGE=quay.io/openshift/origin-sriov-cni:${RELEASE_VERSION}
+-    export SRIOV_DEVICE_PLUGIN_IMAGE=quay.io/openshift/origin-sriov-network-device-plugin:${RELEASE_VERSION}
+-    export OPERATOR_EXEC=${KUBECTL}
+-    make deploy-setup-k8s SHELL=/bin/bash  # on prow nodes the default shell is dash and some commands are not working
+-  popd
+-
+-  echo 'Generating webhook certificates for the SR-IOV operator webhooks'
+-  pushd "${CERTCREATOR_PATH}"
+-    go run . -namespace sriov-network-operator -secret operator-webhook-service -hook operator-webhook -kubeconfig $KUBECONFIG_PATH
+-    go run . -namespace sriov-network-operator -secret network-resources-injector-secret -hook network-resources-injector -kubeconfig $KUBECONFIG_PATH
+-  popd
+-
+-  echo 'Setting caBundle for SR-IOV webhooks'
+-  wait_k8s_object "validatingwebhookconfiguration" "operator-webhook-config"
+-  _kubectl patch validatingwebhookconfiguration operator-webhook-config --patch '{"webhooks":[{"name":"operator-webhook.sriovnetwork.openshift.io", "clientConfig": { "caBundle": "'"$(cat $CERTCREATOR_PATH/operator-webhook.cert)"'" }}]}'
+-
+-  wait_k8s_object "mutatingwebhookconfiguration"   "operator-webhook-config"
+-  _kubectl patch mutatingwebhookconfiguration operator-webhook-config --patch '{"webhooks":[{"name":"operator-webhook.sriovnetwork.openshift.io", "clientConfig": { "caBundle": "'"$(cat $CERTCREATOR_PATH/operator-webhook.cert)"'" }}]}'
+-
+-  wait_k8s_object "mutatingwebhookconfiguration"   "network-resources-injector-config"
+-  _kubectl patch mutatingwebhookconfiguration network-resources-injector-config --patch '{"webhooks":[{"name":"network-resources-injector-config.k8s.io", "clientConfig": { "caBundle": "'"$(cat $CERTCREATOR_PATH/network-resources-injector.cert)"'" }}]}'
+-
+-  return 0
+-}
+-
+-function apply_sriov_node_policy {
+-  local -r policy_file=$1
+-  local -r node_pf=$2
+-  local -r num_vfs=$3
+-
+-  # Substitute $NODE_PF and $NODE_PF_NUM_VFS and create SriovNetworkNodePolicy CR
+-  local -r policy=$(NODE_PF=$node_pf NODE_PF_NUM_VFS=$num_vfs envsubst < $policy_file)
+-  echo "Applying SriovNetworkNodeConfigPolicy:"
+-  echo "$policy"
+-  _kubectl create -f - <<< "$policy"
+-
+-  return 0
+-}
+-
+ function move_sriov_pfs_netns_to_node {
+   local -r node=$1
+   local -r pf_count_per_node=$2
+@@ -277,11 +71,11 @@ for pf in "${NODE_PFS[@]}"; do
+   docker exec $SRIOV_NODE bash -c "echo 0 > /sys/class/net/$pf/device/sriov_numvfs"
+ done
+ 
+-deploy_multus
+-wait_pods_ready
++sriov_operator::deploy_multus
++sriov_operator::wait_pods_ready
+ 
+-deploy_sriov_operator
+-wait_pods_ready
++sriov_operator::deploy_sriov_operator
++sriov_operator::wait_pods_ready
+ 
+ # We use just the first suitable pf, for the SriovNetworkNodePolicy manifest.
+ # We also need the num of vfs because if we don't set this value equals to the total, in case of mellanox
+@@ -290,12 +84,12 @@ NODE_PF=$NODE_PFS
+ NODE_PF_NUM_VFS=$(docker exec $SRIOV_NODE cat /sys/class/net/$NODE_PF/device/sriov_totalvfs)
+ 
+ POLICY="$MANIFESTS_DIR/network_config_policy.yaml"
+-apply_sriov_node_policy "$POLICY" "$NODE_PF" "$NODE_PF_NUM_VFS"
++sriov_operator::apply_sriov_node_policy "$POLICY" "$NODE_PF" "$NODE_PF_NUM_VFS"
+ 
+ # Verify that sriov node has sriov VFs allocatable resource
+ resource_name=$(sed -n 's/.*resourceName: *//p' $POLICY)
+-wait_allocatable_resource $SRIOV_NODE "openshift.io/$resource_name" $NODE_PF_NUM_VFS
+-wait_pods_ready
++sriov_operator::wait_allocatable_resource $SRIOV_NODE "openshift.io/$resource_name" $NODE_PF_NUM_VFS
++sriov_operator::wait_pods_ready
+ 
+ _kubectl get nodes
+ _kubectl get pods -n $SRIOV_OPERATOR_NAMESPACE
+diff --git a/cluster-up/cluster/kind-k8s-sriov-1.17.0/sriov_operator.sh b/cluster-up/cluster/kind-k8s-sriov-1.17.0/sriov_operator.sh
+new file mode 100644
+index 000000000..4b797dc9d
+--- /dev/null
++++ b/cluster-up/cluster/kind-k8s-sriov-1.17.0/sriov_operator.sh
+@@ -0,0 +1,212 @@
++#!/bin/bash
++
++set -ex
++
++KUBECONFIG_PATH="${KUBEVIRTCI_CONFIG_PATH}/$KUBEVIRT_PROVIDER/.kubeconfig"
++CERTCREATOR_PATH="${KUBEVIRTCI_PATH}/cluster/$KUBEVIRT_PROVIDER/certcreator"
++
++OPERATOR_GIT_HASH=8d3c30de8ec5a9a0c9eeb84ea0aa16ba2395cd68  # release-4.4
++
++# This function gets a command and invoke it repeatedly
++# until the command return code is zero
++function retry {
++  local -r tries=$1
++  local -r wait_time=$2
++  local -r action=$3
++  local -r wait_message=$4
++  local -r waiting_action=$5
++
++  eval $action
++  local return_code=$?
++  for i in $(seq $tries); do
++    if [[ $return_code -ne 0 ]] ; then
++      echo "[$i/$tries] $wait_message"
++      eval $waiting_action
++      sleep $wait_time
++      eval $action
++      return_code=$?
++    else
++      return 0
++    fi
++  done
++
++  return 1
++}
++
++function wait_for_daemonSet {
++  local name=$1
++  local namespace=$2
++  local required_replicas=$3
++
++  if [[ $namespace != "" ]];then
++    namespace="-n $namespace"
++  fi
++
++  if (( required_replicas < 0 )); then
++      echo "DaemonSet $name ready replicas number is not valid: $required_replicas"
++      return 1
++  fi
++
++  local -r tries=30
++  local -r wait_time=10
++  wait_message="Waiting for DaemonSet $name to have $required_replicas ready replicas"
++  error_message="DaemonSet $name did not have $required_replicas ready replicas"
++  action="_kubectl get daemonset $namespace $name -o jsonpath='{.status.numberReady}' | grep -w $required_replicas"
++
++  if ! retry "$tries" "$wait_time" "$action" "$wait_message";then
++    echo $error_message
++    return 1
++  fi
++
++  return  0
++}
++
++function wait_k8s_object {
++  local -r object_type=$1
++  local -r name=$2
++  local namespace=$3
++
++  local -r tries=60
++  local -r wait_time=3
++
++  local -r wait_message="Waiting for $object_type $name"
++  local -r error_message="$object_type $name at $namespace namespace found"
++
++  if [[ $namespace != "" ]];then
++    namespace="-n $namespace"
++  fi
++
++  local -r action="_kubectl get $object_type $name $namespace -o custom-columns=NAME:.metadata.name --no-headers"
++
++  if ! retry "$tries" "$wait_time" "$action" "$wait_message";then
++    echo $error_message
++    return  1
++  fi
++
++  return 0
++}
++
++function _check_all_pods_ready() {
++  all_pods_ready_condition=$(_kubectl get pods -A --no-headers -o custom-columns=':.status.conditions[?(@.type == "Ready")].status')
++  if [ "$?" -eq 0 ]; then
++    pods_not_ready_count=$(grep -cw False <<< "$all_pods_ready_condition")
++    if [ "$pods_not_ready_count" -eq 0 ]; then
++      return 0
++    fi
++  fi
++
++  return 1
++}
++
++# not using kubectl wait since with the sriov operator the pods get restarted a couple of times and this is
++# more reliable
++function sriov_operator::wait_pods_ready {
++  local -r tries=30
++  local -r wait_time=10
++
++  local -r wait_message="Waiting for all pods to become ready.."
++  local -r error_message="Not all pods were ready after $(($tries*$wait_time)) seconds"
++
++  local -r get_pods='_kubectl get pods --all-namespaces'
++  local -r action="_check_all_pods_ready"
++
++  set +x
++  trap "set -x" RETURN
++
++  if ! retry "$tries" "$wait_time" "$action" "$wait_message" "$get_pods"; then
++    echo $error_message
++    return 1
++  fi
++
++  echo "all pods are ready"
++  return 0
++}
++
++function sriov_operator::wait_allocatable_resource {
++  local -r node=$1
++  local resource_name=$2
++  local -r expected_value=$3
++
++  local -r tries=48
++  local -r wait_time=10
++
++  local -r wait_message="wait for $node node to have allocatable resource: $resource_name: $expected_value"
++  local -r error_message="node $node doesnt have allocatable resource $resource_name:$expected_value"
++
++  # it is necessary to add '\' before '.' in the resource name.
++  resource_name=$(echo $resource_name | sed s/\\./\\\\\./g)
++  local -r action='_kubectl get node $node -ocustom-columns=:.status.allocatable.$resource_name --no-headers | grep -w $expected_value'
++
++  if ! retry $tries $wait_time "$action" "$wait_message"; then
++    echo $error_message
++    return 1
++  fi
++
++  return 0
++}
++
++function sriov_operator::deploy_multus {
++  echo 'Deploying Multus'
++  _kubectl create -f $MANIFESTS_DIR/multus.yaml
++
++  echo 'Waiting for Multus deployment to become ready'
++  daemonset_name=$(cat $MANIFESTS_DIR/multus.yaml | grep -i daemonset -A 3 | grep -Po '(?<=name:) \S*amd64$')
++  daemonset_namespace=$(cat $MANIFESTS_DIR/multus.yaml | grep -i daemonset -A 3 | grep -Po '(?<=namespace:) \S*$' | head -1)
++  required_replicas=$(_kubectl get daemonset $daemonset_name -n $daemonset_namespace -o jsonpath='{.status.desiredNumberScheduled}')
++  wait_for_daemonSet $daemonset_name $daemonset_namespace $required_replicas
++
++  return 0
++}
++
++function sriov_operator::deploy_sriov_operator {
++  echo 'Downloading the SR-IOV operator'
++  operator_path=${KUBEVIRTCI_CONFIG_PATH}/$KUBEVIRT_PROVIDER/sriov-network-operator-${OPERATOR_GIT_HASH}
++  if [ ! -d $operator_path ]; then
++    curl -LSs https://github.com/openshift/sriov-network-operator/archive/${OPERATOR_GIT_HASH}/sriov-network-operator.tar.gz | tar xz -C ${KUBEVIRTCI_CONFIG_PATH}/$KUBEVIRT_PROVIDER/
++  fi
++
++  echo 'Installing the SR-IOV operator'
++  pushd $operator_path
++    export RELEASE_VERSION=4.4
++    export SRIOV_NETWORK_OPERATOR_IMAGE=quay.io/openshift/origin-sriov-network-operator:${RELEASE_VERSION}
++    export SRIOV_NETWORK_CONFIG_DAEMON_IMAGE=quay.io/openshift/origin-sriov-network-config-daemon:${RELEASE_VERSION}
++    export SRIOV_NETWORK_WEBHOOK_IMAGE=quay.io/openshift/origin-sriov-network-webhook:${RELEASE_VERSION}
++    export NETWORK_RESOURCES_INJECTOR_IMAGE=quay.io/openshift/origin-sriov-dp-admission-controller:${RELEASE_VERSION}
++    export SRIOV_CNI_IMAGE=quay.io/openshift/origin-sriov-cni:${RELEASE_VERSION}
++    export SRIOV_DEVICE_PLUGIN_IMAGE=quay.io/openshift/origin-sriov-network-device-plugin:${RELEASE_VERSION}
++    export OPERATOR_EXEC=${KUBECTL}
++    make deploy-setup-k8s SHELL=/bin/bash  # on prow nodes the default shell is dash and some commands are not working
++  popd
++
++  echo 'Generating webhook certificates for the SR-IOV operator webhooks'
++  pushd "${CERTCREATOR_PATH}"
++    go run . -namespace sriov-network-operator -secret operator-webhook-service -hook operator-webhook -kubeconfig $KUBECONFIG_PATH
++    go run . -namespace sriov-network-operator -secret network-resources-injector-secret -hook network-resources-injector -kubeconfig $KUBECONFIG_PATH
++  popd
++
++  echo 'Setting caBundle for SR-IOV webhooks'
++  wait_k8s_object "validatingwebhookconfiguration" "operator-webhook-config"
++  _kubectl patch validatingwebhookconfiguration operator-webhook-config --patch '{"webhooks":[{"name":"operator-webhook.sriovnetwork.openshift.io", "clientConfig": { "caBundle": "'"$(cat $CERTCREATOR_PATH/operator-webhook.cert)"'" }}]}'
++
++  wait_k8s_object "mutatingwebhookconfiguration"   "operator-webhook-config"
++  _kubectl patch mutatingwebhookconfiguration operator-webhook-config --patch '{"webhooks":[{"name":"operator-webhook.sriovnetwork.openshift.io", "clientConfig": { "caBundle": "'"$(cat $CERTCREATOR_PATH/operator-webhook.cert)"'" }}]}'
++
++  wait_k8s_object "mutatingwebhookconfiguration"   "network-resources-injector-config"
++  _kubectl patch mutatingwebhookconfiguration network-resources-injector-config --patch '{"webhooks":[{"name":"network-resources-injector-config.k8s.io", "clientConfig": { "caBundle": "'"$(cat $CERTCREATOR_PATH/network-resources-injector.cert)"'" }}]}'
++
++  return 0
++}
++
++function sriov_operator::apply_sriov_node_policy {
++  local -r policy_file=$1
++  local -r node_pf=$2
++  local -r num_vfs=$3
++
++  # Substitute $NODE_PF and $NODE_PF_NUM_VFS and create SriovNetworkNodePolicy CR
++  local -r policy=$(NODE_PF=$node_pf NODE_PF_NUM_VFS=$num_vfs envsubst < $policy_file)
++  echo "Applying SriovNetworkNodeConfigPolicy:"
++  echo "$policy"
++  _kubectl create -f - <<< "$policy"
++
++  return 0
++}
+
+From 2adbf84d228f22a807891545809a823a683797b6 Mon Sep 17 00:00:00 2001
+From: Or Mergi <ormergi@redhat.com>
+Date: Mon, 22 Feb 2021 19:29:22 +0200
+Subject: [PATCH 2/4] Present sriov_components.sh script
+
+This change presents sriov_components.sh script
+as an alternative to sriov_operator.sh script.
+It enable deploying 'sriov-device-plugin' [1]
+'sriov-cni'[2] from config_sriov.sh.
+Using built-in kubectl Kustomize [1] it generate
+a YAML manifest that include all necessary objects.
+
+Example:
+sriov_components::deploy_sriov_components "ens1"
+
+It will deploy sriov-dp and sriov-cni,
+and configure sriovdp to create VF's pool for
+inteface ens1.
+
+SRION components files:
+- sriovdp-daemonset.yaml
+    sriov-device-plugin original manifests [4]
+- sriov-cni-daemonset.yaml
+    sriov-cni original manifest [5]
+- sriovdp-config.yaml
+    sriov-device-plugin config map
+- sriov-ns.yaml
+    Namespace that will populate all
+    related objects
+
+Kustomize files:
+- kustomization.yaml
+  Process all the described above files:
+  - Patch all processed objects,
+    .metadata.namespace, with 'sriov'.
+
+  - Uses patch-node-selector.yaml
+    and patch 'sriov-cni' and 'sriov-device-plugin'
+    nodeSelector with 'sriov: "true"' label.
+    in order restrict deployment to supported
+    nodes.
+
+  - Uses patch-sriovdp-resource-prefix.yaml
+    and patch 'sriov-device-plugin' manifest
+    --resource-prefix argument with
+   '--resource-prefix=kubevirt.io'
+
+Signed-off-by: Or Mergi <ormergi@redhat.com>
+---
+ .../manifests/kustomization.yaml              |  27 +++
+ .../manifests/patch-node-selector.yaml        |   3 +
+ .../patch-sriovdp-resource-prefix.yaml        |   3 +
+ .../manifests/sriov-cni-daemonset.yaml        |  47 ++++
+ .../manifests/sriov-ns.yaml                   |   4 +
+ .../manifests/sriovdp-config.yaml             |  17 ++
+ .../manifests/sriovdp-daemonset.yaml          | 202 ++++++++++++++++++
+ .../kind-k8s-sriov-1.17.0/sriov_components.sh | 184 ++++++++++++++++
+ 8 files changed, 487 insertions(+)
+ create mode 100644 cluster-up/cluster/kind-k8s-sriov-1.17.0/manifests/kustomization.yaml
+ create mode 100644 cluster-up/cluster/kind-k8s-sriov-1.17.0/manifests/patch-node-selector.yaml
+ create mode 100644 cluster-up/cluster/kind-k8s-sriov-1.17.0/manifests/patch-sriovdp-resource-prefix.yaml
+ create mode 100644 cluster-up/cluster/kind-k8s-sriov-1.17.0/manifests/sriov-cni-daemonset.yaml
+ create mode 100644 cluster-up/cluster/kind-k8s-sriov-1.17.0/manifests/sriov-ns.yaml
+ create mode 100644 cluster-up/cluster/kind-k8s-sriov-1.17.0/manifests/sriovdp-config.yaml
+ create mode 100644 cluster-up/cluster/kind-k8s-sriov-1.17.0/manifests/sriovdp-daemonset.yaml
+ create mode 100644 cluster-up/cluster/kind-k8s-sriov-1.17.0/sriov_components.sh
+
+diff --git a/cluster-up/cluster/kind-k8s-sriov-1.17.0/manifests/kustomization.yaml b/cluster-up/cluster/kind-k8s-sriov-1.17.0/manifests/kustomization.yaml
+new file mode 100644
+index 000000000..0c1caec16
+--- /dev/null
++++ b/cluster-up/cluster/kind-k8s-sriov-1.17.0/manifests/kustomization.yaml
+@@ -0,0 +1,27 @@
++apiVersion: kustomize.config.k8s.io/v1beta1
++kind: Kustomization
++namespace: sriov
++resources:
++- sriov-ns.yaml
++- sriov-cni-daemonset.yaml
++- sriovdp-daemonset.yaml
++- sriovdp-config.yaml
++patchesJson6902:
++- target:
++    group: apps
++    version: v1
++    kind: DaemonSet
++    name: kube-sriov-cni-ds-amd64
++  path: patch-node-selector.yaml
++- target:
++    group: apps
++    version: v1
++    kind: DaemonSet
++    name: kube-sriov-device-plugin-amd64
++  path: patch-node-selector.yaml
++- target:
++    group: apps
++    version: v1
++    kind: DaemonSet
++    name: kube-sriov-device-plugin-amd64
++  path: patch-sriovdp-resource-prefix.yaml
+diff --git a/cluster-up/cluster/kind-k8s-sriov-1.17.0/manifests/patch-node-selector.yaml b/cluster-up/cluster/kind-k8s-sriov-1.17.0/manifests/patch-node-selector.yaml
+new file mode 100644
+index 000000000..2940de4f7
+--- /dev/null
++++ b/cluster-up/cluster/kind-k8s-sriov-1.17.0/manifests/patch-node-selector.yaml
+@@ -0,0 +1,3 @@
++- op: add
++  path: /spec/template/spec/nodeSelector/sriov
++  value: "true"
+diff --git a/cluster-up/cluster/kind-k8s-sriov-1.17.0/manifests/patch-sriovdp-resource-prefix.yaml b/cluster-up/cluster/kind-k8s-sriov-1.17.0/manifests/patch-sriovdp-resource-prefix.yaml
+new file mode 100644
+index 000000000..696c59045
+--- /dev/null
++++ b/cluster-up/cluster/kind-k8s-sriov-1.17.0/manifests/patch-sriovdp-resource-prefix.yaml
+@@ -0,0 +1,3 @@
++- op: add
++  path: /spec/template/spec/containers/0/args/-1
++  value: --resource-prefix=kubevirt.io
+diff --git a/cluster-up/cluster/kind-k8s-sriov-1.17.0/manifests/sriov-cni-daemonset.yaml b/cluster-up/cluster/kind-k8s-sriov-1.17.0/manifests/sriov-cni-daemonset.yaml
+new file mode 100644
+index 000000000..6a28c146f
+--- /dev/null
++++ b/cluster-up/cluster/kind-k8s-sriov-1.17.0/manifests/sriov-cni-daemonset.yaml
+@@ -0,0 +1,47 @@
++---
++apiVersion: apps/v1
++kind: DaemonSet
++metadata:
++  name: kube-sriov-cni-ds-amd64
++  namespace: kube-system
++  labels:
++    tier: node
++    app: sriov-cni
++spec:
++  selector:
++    matchLabels:
++      name: sriov-cni
++  template:
++    metadata:
++      labels:
++        name: sriov-cni
++        tier: node
++        app: sriov-cni
++    spec:
++      hostNetwork: true
++      nodeSelector:
++        beta.kubernetes.io/arch: amd64
++      tolerations:
++      - key: node-role.kubernetes.io/master
++        operator: Exists
++        effect: NoSchedule
++      containers:
++      - name: kube-sriov-cni
++        image: nfvpe/sriov-cni
++        imagePullPolicy: IfNotPresent
++        securityContext:
++          privileged: true
++        resources:
++          requests:
++            cpu: "100m"
++            memory: "50Mi"
++          limits:
++            cpu: "100m"
++            memory: "50Mi"
++        volumeMounts:
++        - name: cnibin
++          mountPath: /host/opt/cni/bin
++      volumes:
++        - name: cnibin
++          hostPath:
++            path: /opt/cni/bin
+diff --git a/cluster-up/cluster/kind-k8s-sriov-1.17.0/manifests/sriov-ns.yaml b/cluster-up/cluster/kind-k8s-sriov-1.17.0/manifests/sriov-ns.yaml
+new file mode 100644
+index 000000000..bfe55b30d
+--- /dev/null
++++ b/cluster-up/cluster/kind-k8s-sriov-1.17.0/manifests/sriov-ns.yaml
+@@ -0,0 +1,4 @@
++apiVersion: v1
++kind: Namespace
++metadata:
++  name: sriov
+diff --git a/cluster-up/cluster/kind-k8s-sriov-1.17.0/manifests/sriovdp-config.yaml b/cluster-up/cluster/kind-k8s-sriov-1.17.0/manifests/sriovdp-config.yaml
+new file mode 100644
+index 000000000..6afdd9420
+--- /dev/null
++++ b/cluster-up/cluster/kind-k8s-sriov-1.17.0/manifests/sriovdp-config.yaml
+@@ -0,0 +1,17 @@
++---
++apiVersion: v1
++kind: ConfigMap
++metadata:
++  name: sriovdp-config
++  namespace: kube-system
++data:
++  config.json: |
++    {
++      "resourceList": [{
++        "resourceName": "sriov_net",
++        "selectors": {
++          "drivers":["vfio-pci"],
++          "pfNames": ["enp4s0f0","enp4s0f1"]
++        }
++      }]
++    }
+diff --git a/cluster-up/cluster/kind-k8s-sriov-1.17.0/manifests/sriovdp-daemonset.yaml b/cluster-up/cluster/kind-k8s-sriov-1.17.0/manifests/sriovdp-daemonset.yaml
+new file mode 100644
+index 000000000..86d17cf6d
+--- /dev/null
++++ b/cluster-up/cluster/kind-k8s-sriov-1.17.0/manifests/sriovdp-daemonset.yaml
+@@ -0,0 +1,202 @@
++---
++apiVersion: v1
++kind: ServiceAccount
++metadata:
++  name: sriov-device-plugin
++  namespace: kube-system
++
++---
++apiVersion: apps/v1
++kind: DaemonSet
++metadata:
++  name: kube-sriov-device-plugin-amd64
++  namespace: kube-system
++  labels:
++    tier: node
++    app: sriovdp
++spec:
++  selector:
++    matchLabels:
++      name: sriov-device-plugin
++  template:
++    metadata:
++      labels:
++        name: sriov-device-plugin
++        tier: node
++        app: sriovdp
++    spec:
++      hostNetwork: true
++      nodeSelector:
++        beta.kubernetes.io/arch: amd64
++      tolerations:
++      - key: node-role.kubernetes.io/master
++        operator: Exists
++        effect: NoSchedule
++      serviceAccountName: sriov-device-plugin
++      containers:
++      - name: kube-sriovdp
++        image: nfvpe/sriov-device-plugin:v3.3
++        imagePullPolicy: IfNotPresent
++        args:
++        - --log-dir=sriovdp
++        - --log-level=10
++        securityContext:
++          privileged: true
++        volumeMounts:
++        - name: devicesock
++          mountPath: /var/lib/kubelet/
++          readOnly: false
++        - name: log
++          mountPath: /var/log
++        - name: config-volume
++          mountPath: /etc/pcidp
++        - name: device-info
++          mountPath: /var/run/k8s.cni.cncf.io/devinfo/dp
++      volumes:
++        - name: devicesock
++          hostPath:
++            path: /var/lib/kubelet/
++        - name: log
++          hostPath:
++            path: /var/log
++        - name: device-info
++          hostPath:
++            path: /var/run/k8s.cni.cncf.io/devinfo/dp
++            type: DirectoryOrCreate
++        - name: config-volume
++          configMap:
++            name: sriovdp-config
++            items:
++            - key: config.json
++              path: config.json
++
++---
++apiVersion: apps/v1
++kind: DaemonSet
++metadata:
++  name: kube-sriov-device-plugin-ppc64le
++  namespace: kube-system
++  labels:
++    tier: node
++    app: sriovdp
++spec:
++  selector:
++    matchLabels:
++      name: sriov-device-plugin
++  template:
++    metadata:
++      labels:
++        name: sriov-device-plugin
++        tier: node
++        app: sriovdp
++    spec:
++      hostNetwork: true
++      nodeSelector:
++        beta.kubernetes.io/arch: ppc64le
++      tolerations:
++      - key: node-role.kubernetes.io/master
++        operator: Exists
++        effect: NoSchedule
++      serviceAccountName: sriov-device-plugin
++      containers:
++      - name: kube-sriovdp
++        image: nfvpe/sriov-device-plugin:ppc64le
++        imagePullPolicy: IfNotPresent
++        args:
++        - --log-dir=sriovdp
++        - --log-level=10
++        securityContext:
++          privileged: true
++        volumeMounts:
++        - name: devicesock
++          mountPath: /var/lib/kubelet/
++          readOnly: false
++        - name: log
++          mountPath: /var/log
++        - name: config-volume
++          mountPath: /etc/pcidp
++        - name: device-info
++          mountPath: /var/run/k8s.cni.cncf.io/devinfo/dp
++      volumes:
++        - name: devicesock
++          hostPath:
++            path: /var/lib/kubelet/
++        - name: log
++          hostPath:
++            path: /var/log
++        - name: device-info
++          hostPath:
++            path: /var/run/k8s.cni.cncf.io/devinfo/dp
++            type: DirectoryOrCreate
++        - name: config-volume
++          configMap:
++            name: sriovdp-config
++            items:
++            - key: config.json
++              path: config.json
++---
++apiVersion: apps/v1
++kind: DaemonSet
++metadata:
++  name: kube-sriov-device-plugin-arm64
++  namespace: kube-system
++  labels:
++    tier: node
++    app: sriovdp
++spec:
++  selector:
++    matchLabels:
++      name: sriov-device-plugin
++  template:
++    metadata:
++      labels:
++        name: sriov-device-plugin
++        tier: node
++        app: sriovdp
++    spec:
++      hostNetwork: true
++      nodeSelector:
++        beta.kubernetes.io/arch: arm64
++      tolerations:
++      - key: node-role.kubernetes.io/master
++        operator: Exists
++        effect: NoSchedule
++      serviceAccountName: sriov-device-plugin
++      containers:
++      - name: kube-sriovdp
++# this is a temporary image repository for arm64 architecture, util CI/CD of the
++# sriov-device-plugin will not allow to recreate multiple images
++        image: alexeyperevalov/arm64-sriov-device-plugin
++        imagePullPolicy: IfNotPresent
++        args:
++        - --log-dir=sriovdp
++        - --log-level=10
++        securityContext:
++          privileged: true
++        volumeMounts:
++        - name: devicesock
++          mountPath: /var/lib/kubelet/
++          readOnly: false
++        - name: log
++          mountPath: /var/log
++        - name: config-volume
++          mountPath: /etc/pcidp
++        - name: device-info
++          mountPath: /var/run/k8s.cni.cncf.io/devinfo/dp
++      volumes:
++        - name: devicesock
++          hostPath:
++            path: /var/lib/kubelet/
++        - name: log
++          hostPath:
++            path: /var/log
++        - name: device-info
++          hostPath:
++            path: /var/run/k8s.cni.cncf.io/devinfo/dp
++            type: DirectoryOrCreate
++        - name: config-volume
++          configMap:
++            name: sriovdp-config
++            items:
++            - key: config.json
++              path: config.json
+diff --git a/cluster-up/cluster/kind-k8s-sriov-1.17.0/sriov_components.sh b/cluster-up/cluster/kind-k8s-sriov-1.17.0/sriov_components.sh
+new file mode 100644
+index 000000000..e9de4c472
+--- /dev/null
++++ b/cluster-up/cluster/kind-k8s-sriov-1.17.0/sriov_components.sh
+@@ -0,0 +1,184 @@
++#!/bin/bash
++
++set -ex
++
++source ${KUBEVIRTCI_PATH}/cluster/kind/common.sh
++
++KUBECONFIG="${KUBEVIRTCI_CONFIG_PATH}/$KUBEVIRT_PROVIDER/.kubeconfig"
++KUBECTL="${KUBEVIRTCI_CONFIG_PATH}/$KUBEVIRT_PROVIDER/.kubectl --kubeconfig=${KUBECONFIG}"
++
++MANIFESTS_DIR="${KUBEVIRTCI_PATH}/cluster/${KUBEVIRT_PROVIDER}/manifests"
++MULTUS_MANIFEST="${MANIFESTS_DIR}/multus.yaml"
++
++CUSTOM_MANIFESTS="${KUBEVIRTCI_CONFIG_PATH}/${KUBEVIRT_PROVIDER}/manifests"
++SRIOV_COMPONENTS_MANIFEST="${CUSTOM_MANIFESTS}/sriov-components.yaml"
++SRIOV_DEVICE_PLUGIN_CONFIG_MANIFEST="${CUSTOM_MANIFESTS}/sriovdp-config.yaml"
++
++SRIOV_COMPONENTS_NAMESPACE="${SRIOV_COMPONENTS_NAMESPACE:-sriov}"
++
++function _kubectl() {
++    ${KUBECTL} "$@"
++}
++
++function _retry() {
++  local -r tries=$1
++  local -r wait_time=$2
++  local -r action=$3
++  local -r wait_message=$4
++  local -r waiting_action=$5
++
++  eval $action
++  local return_code=$?
++  for i in $(seq $tries); do
++    if [[ $return_code -ne 0 ]]; then
++      echo "[$i/$tries] $wait_message"
++      eval $waiting_action
++      sleep $wait_time
++      eval $action
++      return_code=$?
++    else
++      return 0
++    fi
++  done
++
++  return 1
++}
++
++function _check_all_pods_ready() {
++  all_pods_ready_condition=$(_kubectl get pods -A --no-headers -o custom-columns=':.status.conditions[?(@.type == "Ready")].status')
++  if [ "$?" -eq 0 ]; then
++    pods_not_ready_count=$(grep -cw False <<<"$all_pods_ready_condition")
++    if [ "$pods_not_ready_count" -eq 0 ]; then
++      return 0
++    fi
++  fi
++
++  return 1
++}
++
++# not using kubectl wait since with the sriov operator the pods get restarted a couple of times and this is
++# more reliable
++function sriov_components::wait_pods_ready() {
++  local -r tries=30
++  local -r wait_time=10
++
++  local -r wait_message="Waiting for all pods to become ready.."
++  local -r error_message="Not all pods were ready after $(($tries * $wait_time)) seconds"
++
++  local -r get_pods='_kubectl get pods --all-namespaces'
++  local -r action="_check_all_pods_ready"
++
++  set +x
++  trap "set -x" RETURN
++
++  if ! _retry "$tries" "$wait_time" "$action" "$wait_message" "$get_pods"; then
++    echo $error_message
++    return 1
++  fi
++
++  echo "all pods are ready"
++  return 0
++}
++
++function sriov_components::wait_allocatable_resource() {
++  local -r node=$1
++  local resource_name=$2
++  local -r expected_value=$3
++
++  local -r tries=48
++  local -r wait_time=10
++
++  local -r wait_message="wait for $node node to have allocatable resource: $resource_name: $expected_value"
++  local -r error_message="node $node doesnt have allocatable resource $resource_name:$expected_value"
++
++  # it is necessary to add '\' before '.' in the resource name.
++  resource_name=$(echo $resource_name | sed s/\\./\\\\\./g)
++  local -r action='_kubectl get node $node -ocustom-columns=:.status.allocatable.$resource_name --no-headers | grep -w $expected_value'
++
++  if ! _retry $tries $wait_time "$action" "$wait_message"; then
++    echo $error_message
++    return 1
++  fi
++
++  return 0
++}
++
++function sriov_components::deploy_multus() {
++  echo 'Deploying Multus'
++  _kubectl apply -f "$MULTUS_MANIFEST"
++
++  return 0
++}
++
++function sriov_components::deploy_sriov_components() {
++  local -r pf_names=$1
++
++  _create_custom_manifests_dir
++  _prepare_device_plugin_config "$pf_names"
++  _deploy_sriov_components
++
++  return 0
++}
++
++function _create_custom_manifests_dir() {
++  mkdir -p "$CUSTOM_MANIFESTS"
++
++  cp -f "$MANIFESTS_DIR"/* "$CUSTOM_MANIFESTS"
++
++  return 0
++}
++
++function _prepare_device_plugin_config() {
++  local -r pf_names=$1
++
++  # Format the input PF name to JSON string array
++  local -r pf_names_json_array=$(_format_json_array "$pf_names")
++
++  # Patch sriov-dp ConfigMap, pfNames with PF names json array
++  sed -i "s?pfNames\":.*?pfNames\": $pf_names_json_array?g" "$SRIOV_DEVICE_PLUGIN_CONFIG_MANIFEST"
++
++  return 0
++}
++
++function _format_json_array() {
++  local -r string=$1
++
++  local json_array="$string"
++  # Replace all spaces with ",": aa bb -> aa","bb
++  local -r replace='","'
++  json_array="${json_array// /$replace}"
++
++  # Add opening quotes for first element, and closing quotes for last element
++  # aa","bb -> "aa","bb"
++  json_array="\"${json_array}\""
++
++  # Add brackets: "aa","bb" -> ["aa","bb"]
++  json_array="[${json_array}]"
++
++  echo "$json_array"
++}
++
++function _deploy_sriov_components() {
++  _kubectl kustomize "$CUSTOM_MANIFESTS" >"$SRIOV_COMPONENTS_MANIFEST"
++
++  echo "Deploying SRIOV components:"
++  cat "$SRIOV_COMPONENTS_MANIFEST"
++
++  _kubectl apply -f "$SRIOV_COMPONENTS_MANIFEST"
++
++  return 0
++}
++
++function sriov_components::get_resource_name() {
++  local resource_name
++  resource_name=$(sed -n 's/.*"resourceName": *//p' "$SRIOV_COMPONENTS_MANIFEST")
++  resource_name=$(sed 's/"//g' <<<"$resource_name")
++  resource_name=$(sed 's/,//g' <<<"$resource_name")
++  resource_name=$(sed 's/ //g' <<<"$resource_name")
++
++  local resource_prefix
++  resource_prefix=$(sed -n 's/.*resource-prefix= *//p' "$SRIOV_COMPONENTS_MANIFEST")
++  resource_prefix=$(sed 's/ //g' <<<"$resource_prefix")
++
++  echo "$resource_prefix/$resource_name"
++}
+
+From 632b6b31745b0603866bcf5ae6c7d2b4d72d432c Mon Sep 17 00:00:00 2001
+From: Or Mergi <ormergi@redhat.com>
+Date: Mon, 22 Feb 2021 19:36:38 +0200
+Subject: [PATCH 3/4] SRIOV provider: drop sriov-network-operator
+
+As part of sriov provider cluster-up, sriov-network-operator
+is deployed.
+This operator meant for provisioning and configuring
+sriov-cni and sriov-dp (device-plugin) on fully-flagged
+Openshift cluster in production environments.
+
+For our use case, Kubvirt test suite and CI,
+it enough to configure VF's statically and deploy
+sriov-dp and cni.
+
+It will reduce the complexity of the provider making it
+easier to maintain and reduce the time it takes
+for cluster to be ready.
+
+This commit present configure_vfs.sh script in order
+to handle VF's configurations on cluster nodes.
+It creates VF's and set their driver for each
+SRIOV PF on the default netns.
+It will invoked on KIND node container after PF's
+moved to the container netns.
+
+Signed-off-by: Or Mergi <ormergi@redhat.com>
+---
+ .../kind-k8s-sriov-1.17.0/config_sriov.sh     |  53 ++++-----
+ .../kind-k8s-sriov-1.17.0/configure_vfs.sh    | 104 ++++++++++++++++++
+ 2 files changed, 131 insertions(+), 26 deletions(-)
+ create mode 100755 cluster-up/cluster/kind-k8s-sriov-1.17.0/configure_vfs.sh
+
+diff --git a/cluster-up/cluster/kind-k8s-sriov-1.17.0/config_sriov.sh b/cluster-up/cluster/kind-k8s-sriov-1.17.0/config_sriov.sh
+index 028196f2e..93514a2b9 100755
+--- a/cluster-up/cluster/kind-k8s-sriov-1.17.0/config_sriov.sh
++++ b/cluster-up/cluster/kind-k8s-sriov-1.17.0/config_sriov.sh
+@@ -1,16 +1,23 @@
+ #!/bin/bash
+ set -xe
+ 
++SCRIPT_PATH=$(dirname "$(realpath "$0")")
++
+ source ${KUBEVIRTCI_PATH}/cluster/kind/common.sh
+-source sriov_operator.sh
++source ${SCRIPT_PATH}/sriov_components.sh
+ 
+ MANIFESTS_DIR="${KUBEVIRTCI_PATH}/cluster/$KUBEVIRT_PROVIDER/manifests"
+ 
++CONFIGURE_VFS_SCRIPT="configure_vfs.sh"
++CONFIGURE_VFS_SCRIPT_PATH="$SCRIPT_PATH/$CONFIGURE_VFS_SCRIPT"
++
+ MASTER_NODE="${CLUSTER_NAME}-control-plane"
+ WORKER_NODE_ROOT="${CLUSTER_NAME}-worker"
+-PF_COUNT_PER_NODE=${PF_COUNT_PER_NODE:-1}
+ 
+-SRIOV_OPERATOR_NAMESPACE="sriov-network-operator"
++SRIOV_COMPONENTS_NAMESPACE="sriov"
++SRIOV_NODE_LABEL="sriov=true"
++
++PF_COUNT_PER_NODE=${PF_COUNT_PER_NODE:-1}
+ 
+ [ $PF_COUNT_PER_NODE -le 0 ] && echo "FATAL: PF_COUNT_PER_NODE must be a positive integer" >&2 && exit 1
+ 
+@@ -61,37 +68,31 @@ if [[ "$SRIOV_NODE" == "${WORKER_NODE_ROOT}0" ]]; then
+ fi
+ 
+ NODE_PFS=($(move_sriov_pfs_netns_to_node "$SRIOV_NODE" "$PF_COUNT_PER_NODE"))
++NODE_PF=$NODE_PFS
+ 
+-SRIOV_NODE_CMD="docker exec -it -d ${SRIOV_NODE}"
+-${SRIOV_NODE_CMD} mount -o remount,rw /sys     # kind remounts it as readonly when it starts, we need it to be writeable
+-${SRIOV_NODE_CMD} chmod 666 /dev/vfio/vfio
+-_kubectl label node $SRIOV_NODE sriov=true
++SRIOV_NODE_CMD="docker exec ${SRIOV_NODE}"
++NODE_PF_NUM_VFS=$(${SRIOV_NODE_CMD} cat /sys/class/net/$NODE_PF/device/sriov_totalvfs)
+ 
+-for pf in "${NODE_PFS[@]}"; do
+-  docker exec $SRIOV_NODE bash -c "echo 0 > /sys/class/net/$pf/device/sriov_numvfs"
+-done
++# KIND mounts sysfs as readonly, this script requires R/W access to sysfs
++${SRIOV_NODE_CMD} mount -o remount,rw /sys
++${SRIOV_NODE_CMD} chmod 666 /dev/vfio/vfio
+ 
+-sriov_operator::deploy_multus
+-sriov_operator::wait_pods_ready
++# Create and configure SRIOV Virtual Functions on SRIOV node
++docker cp "$CONFIGURE_VFS_SCRIPT_PATH" "$SRIOV_NODE:/"
++${SRIOV_NODE_CMD} bash -c "./$CONFIGURE_VFS_SCRIPT"
+ 
+-sriov_operator::deploy_sriov_operator
+-sriov_operator::wait_pods_ready
++_kubectl label node $SRIOV_NODE $SRIOV_NODE_LABEL
+ 
+-# We use just the first suitable pf, for the SriovNetworkNodePolicy manifest.
+-# We also need the num of vfs because if we don't set this value equals to the total, in case of mellanox
+-# the sriov operator will trigger a node reboot to update the firmware
+-NODE_PF=$NODE_PFS
+-NODE_PF_NUM_VFS=$(docker exec $SRIOV_NODE cat /sys/class/net/$NODE_PF/device/sriov_totalvfs)
++sriov_components::deploy_multus
++sriov_components::wait_pods_ready
+ 
+-POLICY="$MANIFESTS_DIR/network_config_policy.yaml"
+-sriov_operator::apply_sriov_node_policy "$POLICY" "$NODE_PF" "$NODE_PF_NUM_VFS"
++sriov_components::deploy_sriov_components "$NODE_PF"
+ 
+ # Verify that sriov node has sriov VFs allocatable resource
+-resource_name=$(sed -n 's/.*resourceName: *//p' $POLICY)
+-sriov_operator::wait_allocatable_resource $SRIOV_NODE "openshift.io/$resource_name" $NODE_PF_NUM_VFS
+-sriov_operator::wait_pods_ready
++resource_name=$(sriov_components::get_resource_name)
++sriov_components::wait_allocatable_resource "$SRIOV_NODE" "$resource_name" "$NODE_PF_NUM_VFS"
++sriov_components::wait_pods_ready
+ 
+ _kubectl get nodes
+-_kubectl get pods -n $SRIOV_OPERATOR_NAMESPACE
++_kubectl get pods -n $SRIOV_COMPONENTS_NAMESPACE
+ echo
+-echo "$KUBEVIRT_PROVIDER cluster is ready"
+diff --git a/cluster-up/cluster/kind-k8s-sriov-1.17.0/configure_vfs.sh b/cluster-up/cluster/kind-k8s-sriov-1.17.0/configure_vfs.sh
+new file mode 100755
+index 000000000..1add8d8cf
+--- /dev/null
++++ b/cluster-up/cluster/kind-k8s-sriov-1.17.0/configure_vfs.sh
+@@ -0,0 +1,104 @@
++#! /bin/bash
++
++set -ex
++
++function configure_vf_driver() {
++  local -r vf_sys_device=$1
++  local -r driver=$2
++
++  vf_pci_address=$(basename $vf_sys_device)
++  # Check if a VF is bound to a different driver
++  if [ -d "$vf_sys_device/driver" ]; then
++    vf_bus_pci_device_driver=$(readlink -e $vf_sys_device/driver)
++    vf_driver_name=$(basename $vf_bus_pci_device_driver)
++
++    # Check if VF already configured with supported driver
++    if [[ $vf_driver_name == $driver ]]; then
++      return
++    else
++      echo "Unbind VF $vf_pci_address from $vf_driver_name driver"
++      echo "$vf_pci_address" >> "$vf_bus_pci_device_driver/unbind"
++    fi
++  fi
++
++  echo "Bind VF $vf_pci_address to $driver driver"
++  echo "$driver" >> "$vf_sys_device/driver_override"
++  echo "$vf_pci_address" >> "/sys/bus/pci/drivers/$driver/bind"
++  echo "" >> "$vf_sys_device/driver_override"
++
++  return 0
++}
++
++function configure_pf_vf_count() {
++  local -r pf_net_device=$1
++  local -r vfs_count=$2
++
++  local -r pf_name=$(basename $pf_net_device)
++  local -r pf_sys_device=$(readlink -e $pf_net_device)
++
++  local -r sriov_totalvfs_content=$(cat $pf_sys_device/sriov_totalvfs)
++  [ $sriov_totalvfs_content -lt $vfs_count ] && \
++    echo "FATAL: PF $pf_name, VF's count should be up to sriov_totalvfs: $sriov_totalvfs_content" >&2 && return 1
++
++  local -r sriov_numvfs_content=$(cat $pf_sys_device/sriov_numvfs)
++  if [ $sriov_numvfs_content -ne $vfs_count ]; then
++    echo "Creating $vfs_count VF's on PF $pf_name"
++    echo 0 >> "$pf_sys_device/sriov_numvfs"
++    echo "$vfs_count" >> "$pf_sys_device/sriov_numvfs"
++    sleep 3
++  fi
++
++  return 0
++}
++
++function validate_script_execution_privileges() {
++  [ "$(id -u)" -ne 0 ] && echo "FATAL: This script requires sudo privileges" >&2 && return 1
++
++  return 0
++}
++
++function validate_sysfs_mount_permissions() {
++  local -r sysfs_permissions=$(grep -Po 'sysfs.*\K(ro|rw)' /proc/mounts)
++  [ "$sysfs_permissions" != rw ] && echo "FATAL: sysfs is read-only, try to remount as RW" >&2 && return 1
++
++  return 0
++}
++
++function ensure_driver_is_loaded() {
++  local -r driver_name=$1
++  local -r module_name=$2
++
++  if ! grep "$module_name" /proc/modules; then
++    if ! modprobe "$driver_name"; then
++      echo "FATAL: failed to load $DRIVER_NAME driver" >&2 && return 1
++    fi
++  fi
++
++  return 0
++}
++
++DRIVER_NAME="vfio-pci"
++DRIVER_MODULE_NAME="vfio_pci"
++
++validate_script_execution_privileges
++validate_sysfs_mount_permissions
++ensure_driver_is_loaded $DRIVER_NAME $DRIVER_MODULE_NAME
++
++sriov_pfs=( $(find /sys/class/net/*/device/sriov_numvfs) )
++[ "${#sriov_pfs[@]}" -eq 0 ] && echo "FATAL: Could not find available sriov PFs" >&2 && exit 1
++
++for pf_name in $sriov_pfs; do
++  pf_device=$(dirname "$pf_name")
++
++  echo "Create VF's"
++  sriov_numvfs=$(cat "$pf_device/sriov_totalvfs")
++  configure_pf_vf_count "$pf_device" "$sriov_numvfs"
++
++  echo "Configuring VF's drivers"
++  # /sys/class/net/<pf name>/device/virtfn*
++  vfs_sys_devices=$(readlink -e $pf_device/virtfn*)
++  for vf in $vfs_sys_devices; do
++    configure_vf_driver "$vf" $DRIVER_NAME
++    ls -l "$vf/driver"
++  done
++done
+
+From 8f8f881ed484952be943b8f078e6ff1cf02dfc1b Mon Sep 17 00:00:00 2001
+From: Or Mergi <ormergi@redhat.com>
+Date: Thu, 25 Feb 2021 18:53:46 +0200
+Subject: [PATCH 4/4] config_sriov.sh: validate script run with sudo
+
+Signed-off-by: Or Mergi <ormergi@redhat.com>
+---
+ cluster-up/cluster/kind-k8s-sriov-1.17.0/config_sriov.sh | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/cluster-up/cluster/kind-k8s-sriov-1.17.0/config_sriov.sh b/cluster-up/cluster/kind-k8s-sriov-1.17.0/config_sriov.sh
+index 93514a2b9..514a9e2a0 100755
+--- a/cluster-up/cluster/kind-k8s-sriov-1.17.0/config_sriov.sh
++++ b/cluster-up/cluster/kind-k8s-sriov-1.17.0/config_sriov.sh
+@@ -1,4 +1,7 @@
+ #!/bin/bash
++
++[ $(id -u) -ne 0 ] && echo "FATAL: this script requires sudo privileges" >&2 && exit 1
++
+ set -xe
+ 
+ SCRIPT_PATH=$(dirname "$(realpath "$0")")

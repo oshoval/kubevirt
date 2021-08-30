@@ -1,0 +1,5 @@
+package images
+
+var (
+	SUFFIX = ""
+)

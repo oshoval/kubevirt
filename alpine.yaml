@@ -1,0 +1,50 @@
+apiVersion: kubevirt.io/v1
+kind: VirtualMachineInstance
+metadata:
+  name: testvmi-alp
+spec:
+  domain:
+    cpu:
+      cores: 1
+      sockets: 1
+      threads: 1
+    devices:
+      disks:
+      - disk:
+          bus: virtio
+        name: disk0
+      - disk:
+          bus: virtio
+        name: disk1
+      - disk:
+          bus: virtio
+        name: emptydisk1
+      interfaces:
+      - masquerade: {}
+        name: default
+    features:
+      acpi:
+        enabled: true
+    firmware:
+      uuid: d753a437-4c0a-4293-976d-359e5a26b2dc
+    machine:
+      type: q35
+    resources:
+      requests:
+        cpu: 100m
+        memory: 64M
+  networks:
+  - name: default
+    pod: {}
+  terminationGracePeriodSeconds: 0
+  volumes:
+  - containerDisk:
+      image: registry:5000/kubevirt/alpine-container-disk-demo:devel
+      imagePullPolicy: IfNotPresent
+    name: disk0
+  - cloudInitNoCloud:
+      userDataBase64: ZWNobyBoaSE=
+    name: disk1
+  - emptyDisk:
+      capacity: 2Gi
+    name: emptydisk1

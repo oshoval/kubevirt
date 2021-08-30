@@ -1,0 +1,157 @@
+From 6087e6e3f716b202ef364aa4e73eee00b1bbe0ce Mon Sep 17 00:00:00 2001
+From: Or Shoval <oshoval@redhat.com>
+Date: Wed, 11 Aug 2021 11:23:23 +0300
+Subject: [PATCH] cluster-sync, Run clean parallel to build
+
+In order to make cluster-sync faster,
+run the cluster-sync parallel to the cluster-build.
+Before running cluster-deploy, wait for the resources
+to be clean.
+
+This saves around 3.5 minutes.
+
+Signed-off-by: Or Shoval <oshoval@redhat.com>
+---
+ Makefile              |  3 +--
+ hack/cluster-clean.sh | 52 +++++++++++++++++++++++++++++++++++--------
+ hack/cluster-sync.sh  | 43 +++++++++++++++++++++++++++++++++++
+ 3 files changed, 87 insertions(+), 11 deletions(-)
+ create mode 100755 hack/cluster-sync.sh
+
+diff --git a/Makefile b/Makefile
+index 1bfd76e98a3f..b50d23ec9ebe 100644
+--- a/Makefile
++++ b/Makefile
+@@ -147,8 +147,7 @@ cluster-deploy: cluster-clean
+ 	./hack/cluster-deploy.sh
+ 
+ cluster-sync:
+-	$(MAKE) cluster-build
+-	$(MAKE) cluster-deploy
++	./hack/cluster-sync.sh
+ 
+ builder-build:
+ 	./hack/builder/build.sh
+diff --git a/hack/cluster-clean.sh b/hack/cluster-clean.sh
+index c0d2ec5ade90..8431b21c49ea 100755
+--- a/hack/cluster-clean.sh
++++ b/hack/cluster-clean.sh
+@@ -124,7 +124,15 @@ function delete_namespaces() {
+         if [ -n "$(_kubectl get ns | grep "${i} ")" ]; then
+             echo "Clean ${i} namespace"
+             _kubectl delete ns ${i}
++        fi
++    done
++}
++
++function wait_for_namespaces_deletion() {
++    local managed_namespaces=("$@")
+ 
++    for i in ${managed_namespaces[@]}; do
++        if [ -n "$(_kubectl get ns | grep "${i} ")" ]; then
+             local start_time=0
+             local sample=10
+             local timeout=120
+@@ -141,18 +149,44 @@ function delete_namespaces() {
+ }
+ 
+ function main() {
+-    echo "Cleaning up ..."
++    SKIP_CLEAN="false"
++    SKIP_WAIT="false"
++
++    while [[ $# -gt 0 ]]; do
++        key="$1"
++        case $key in
++        --skip-wait)
++            SKIP_WAIT="true"
++            shift
++            ;;
++        --skip-clean)
++            SKIP_CLEAN="true"
++            shift
++            ;;
++        *)
++            echo "unknown option $key"
++            exit 1
++            ;;
++        esac
++    done
+ 
+     local kubevirt_managed_namespaces=(${namespace} ${cdi_namespace})
+ 
+-    delete_kubevirt_cr
+-    remove_finalizers
+-    delete_resources "${kubevirt_managed_namespaces[@]}"
+-    delete_namespaces "${kubevirt_managed_namespaces[@]}"
+-
+-    sleep 2
+-
+-    echo "Done $0"
++    if [[ $SKIP_CLEAN == "false" ]]; then
++        echo "Cleaning up ..."
++        delete_kubevirt_cr
++        remove_finalizers
++        delete_resources "${kubevirt_managed_namespaces[@]}"
++        delete_namespaces "${kubevirt_managed_namespaces[@]}"
++    fi
++
++    if [[ $SKIP_WAIT == "false" ]]; then
++        echo "Waiting for namespaces to disappear ..."
++        set +x
++        wait_for_namespaces_deletion "${kubevirt_managed_namespaces[@]}"
++        sleep 2
++        echo "Namespaces deleted"
++    fi
+ }
+ 
+ main "$@"
+diff --git a/hack/cluster-sync.sh b/hack/cluster-sync.sh
+new file mode 100755
+index 000000000000..f2f0d2ca3944
+--- /dev/null
++++ b/hack/cluster-sync.sh
+@@ -0,0 +1,43 @@
++#!/usr/bin/env bash
++#
++# This file is part of the KubeVirt project
++#
++# Licensed under the Apache License, Version 2.0 (the "License");
++# you may not use this file except in compliance with the License.
++# You may obtain a copy of the License at
++#
++#     http://www.apache.org/licenses/LICENSE-2.0
++#
++# Unless required by applicable law or agreed to in writing, software
++# distributed under the License is distributed on an "AS IS" BASIS,
++# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++# See the License for the specific language governing permissions and
++# limitations under the License.
++#
++# Copyright 2021 Red Hat, Inc.
++#
++
++set -e
++
++TEMP_FILE=$(mktemp -p /tmp -t kubevirt.deploy.XXXX)
++
++trap 'rm -f $TEMP_FILE' EXIT SIGINT
++
++function main() {
++    ./hack/cluster-clean.sh --skip-wait >$TEMP_FILE 2>&1 &
++    CLEAN_PID=$!
++
++    make cluster-build
++
++    echo "waiting for cluster-clean to finish"
++    if ! wait $CLEAN_PID; then
++        echo "cluster-clean failed, output was:"
++        cat $TEMP_FILE
++        exit 1
++    fi
++
++    ./hack/cluster-clean.sh --skip-clean
++    ./hack/cluster-deploy.sh
++}
++
++main "$@"

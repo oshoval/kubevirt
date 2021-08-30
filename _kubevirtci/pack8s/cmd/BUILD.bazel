@@ -1,0 +1,24 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "go_default_library",
+    srcs = [
+        "exec.go",
+        "ports.go",
+        "prune_volumes.go",
+        "pull.go",
+        "rm.go",
+        "root.go",
+        "run.go",
+        "scp.go",
+        "show.go",
+        "ssh.go",
+        "version.go",
+    ],
+    importpath = "kubevirt.io/kubevirt/_kubevirtci/pack8s/cmd",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//vendor/github.com/spf13/cobra:go_default_library",
+        "//vendor/golang.org/x/crypto/ssh:go_default_library",
+    ],
+)

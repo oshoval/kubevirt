@@ -1,0 +1,38 @@
+apiVersion: kubevirt.io/v1
+kind: VirtualMachineInstance
+metadata:
+  name: testvmi1
+spec:
+  domain:
+    cpu:
+      cores: 1
+      sockets: 1
+      threads: 1
+    devices:
+      disks:
+      - disk:
+          bus: virtio
+        name: disk0
+      interfaces:
+      - masquerade: {}
+        name: default
+      rng: {}
+    features:
+      acpi:
+        enabled: true
+    machine:
+      type: q35
+    resources:
+      requests:
+        cpu: 500m
+        memory: 1024Mi
+  networks:
+  - name: default
+    pod: {}
+  terminationGracePeriodSeconds: 0
+  volumes:
+  - containerDisk:
+      image: registry:5000/kubevirt/fedora-sriov-lane-container-disk:devel
+      #imagePullPolicy: IfNotPresent
+      imagePullPolicy: Always
+    name: disk0

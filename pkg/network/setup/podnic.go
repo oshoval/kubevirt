@@ -245,7 +245,7 @@ func (l *podNIC) PlugPhase2(domain *api.Domain) error {
 	}
 
 	if l.dhcpConfigurator != nil {
-		dhcpConfig, err := l.dhcpConfigurator.Generate()
+		dhcpConfig, err := l.dhcpConfigurator.Generate(l.vmi.Spec.Subdomain)
 		if err != nil {
 			log.Log.Reason(err).Errorf("failed to get a dhcp configuration for: %s", l.podInterfaceName)
 			return err

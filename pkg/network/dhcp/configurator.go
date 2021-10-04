@@ -34,7 +34,7 @@ const defaultDHCPStartedDirectory = "/var/run/kubevirt-private"
 
 type Configurator interface {
 	EnsureDHCPServerStarted(podInterfaceName string, dhcpConfig cache.DHCPConfig, dhcpOptions *v1.DHCPOptions) error
-	Generate() (*cache.DHCPConfig, error)
+	Generate(string) (*cache.DHCPConfig, error)
 }
 
 type configurator struct {
@@ -46,7 +46,7 @@ type configurator struct {
 }
 
 type ConfigGenerator interface {
-	Generate() (*cache.DHCPConfig, error)
+	Generate(string) (*cache.DHCPConfig, error)
 }
 
 func NewBridgeConfigurator(cacheFactory cache.InterfaceCacheFactory, launcherPID string, advertisingIfaceName string, handler netdriver.NetworkHandler, podInterfaceName string,
@@ -93,6 +93,6 @@ func (d *configurator) getDHCPStartedFilePath(podInterfaceName string) string {
 	return fmt.Sprintf("%s/dhcp_started-%s", d.dhcpStartedDirectory, podInterfaceName)
 }
 
-func (d *configurator) Generate() (*cache.DHCPConfig, error) {
-	return d.configGenerator.Generate()
+func (d *configurator) Generate(subdomain string) (*cache.DHCPConfig, error) {
+	return d.configGenerator.Generate(subdomain)
 }

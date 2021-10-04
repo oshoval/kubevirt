@@ -116,7 +116,7 @@ func ReadCloudInitVolumeDataSource(vmi *v1.VirtualMachineInstance, secretSourceD
 			}
 
 			cloudInitData, err = readCloudInitNoCloudSource(volume.CloudInitNoCloud)
-			cloudInitData.NoCloudMetaData = readCloudInitNoCloudMetaData(vmi.Name, hostname, vmi.Namespace)
+			cloudInitData.NoCloudMetaData = readCloudInitNoCloudMetaData(vmi.Name, hostname, vmi.Namespace, vmi.Spec.Subdomain)
 			return cloudInitData, err
 		}
 		if volume.CloudInitConfigDrive != nil {
@@ -349,10 +349,15 @@ func readCloudInitConfigDriveSource(source *v1.CloudInitConfigDriveSource) (*Clo
 	}, nil
 }
 
-func readCloudInitNoCloudMetaData(name, hostname, namespace string) *NoCloudMetadata {
+func readCloudInitNoCloudMetaData(name, hostname, namespace, subdomain string) *NoCloudMetadata {
+	localHostName := hostname
+	if subdomain != "" {
+		localHostName = hostname + "." + subdomain
+	}
+
 	return &NoCloudMetadata{
 		InstanceID:    fmt.Sprintf("%s.%s", name, namespace),
-		LocalHostname: hostname,
+		LocalHostname: localHostName,
 	}
 }
 

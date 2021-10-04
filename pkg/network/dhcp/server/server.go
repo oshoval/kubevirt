@@ -58,6 +58,7 @@ func SingleClientDHCPServer(
 	routes *[]netlink.Route,
 	searchDomains []string,
 	mtu uint16,
+	subdomaing string,
 	customDHCPOptions *v1.DHCPOptions) error {
 
 	log.Log.Info("Starting SingleClientDHCPServer")
@@ -67,7 +68,7 @@ func SingleClientDHCPServer(
 		return fmt.Errorf("reading the pods hostname failed: %v", err)
 	}
 
-	options, err := prepareDHCPOptions(clientMask, routerIP, dnsIPs, routes, searchDomains, mtu, hostname, customDHCPOptions)
+	options, err := prepareDHCPOptions(clientMask, routerIP, dnsIPs, routes, searchDomains, mtu, hostname, subdomaing, customDHCPOptions)
 	if err != nil {
 		return err
 	}
@@ -100,6 +101,7 @@ func prepareDHCPOptions(
 	searchDomains []string,
 	mtu uint16,
 	hostname string,
+	subdomain string,
 	customDHCPOptions *v1.DHCPOptions) (dhcp.Options, error) {
 
 	mtuArray := make([]byte, 2)
@@ -131,7 +133,11 @@ func prepareDHCPOptions(
 		dhcpOptions[dhcp.OptionDomainSearch] = searchDomainBytes
 	}
 
-	dhcpOptions[dhcp.OptionHostName] = []byte(hostname)
+	if subdomain != "" {
+		dhcpOptions[dhcp.OptionHostName] = []byte(hostname + "." + subdomain)
+	} else {
+		dhcpOptions[dhcp.OptionHostName] = []byte(hostname)
+	}
 
 	// Windows will ask for the domain name and use it for DNS resolution
 	domainName := getDomainName(searchDomains)

@@ -35,7 +35,7 @@ type MasqueradeConfigGenerator struct {
 	podInterfaceName string
 }
 
-func (d *MasqueradeConfigGenerator) Generate() (*cache.DHCPConfig, error) {
+func (d *MasqueradeConfigGenerator) Generate(subdomain string) (*cache.DHCPConfig, error) {
 	dhcpConfig := &cache.DHCPConfig{}
 	podNicLink, err := d.handler.LinkByName(d.podInterfaceName)
 	if err != nil {
@@ -59,6 +59,7 @@ func (d *MasqueradeConfigGenerator) Generate() (*cache.DHCPConfig, error) {
 	}
 	dhcpConfig.IPv6 = *ipv6
 	dhcpConfig.AdvertisingIPv6Addr = ipv6Gateway.IP.To16()
+	dhcpConfig.Subdomain = subdomain
 
 	return dhcpConfig, nil
 }

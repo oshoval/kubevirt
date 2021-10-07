@@ -32,6 +32,7 @@ import (
 	"github.com/onsi/ginkgo/extensions/table"
 	. "github.com/onsi/gomega"
 
+	servicepkg "kubevirt.io/kubevirt/tests/libnet/service"
 	"kubevirt.io/kubevirt/tests/util"
 
 	batchv1 "k8s.io/api/batch/v1"
@@ -50,14 +51,16 @@ import (
 )
 
 const (
-	istioDeployedEnvVariable = "KUBEVIRT_DEPLOY_ISTIO"
-	vmiAppSelector           = "istio-vmi-app"
-	vmiServerAppSelector     = "vmi-server-app"
-	vmiServerHostName        = "vmi-server"
-	vmiServerGateway         = "vmi-server-gw"
-	vmiServerTestPort        = 4200
-	svcDeclaredTestPort      = 1500
-	svcUndeclaredTestPort    = 1501
+	istioDeployedEnvVariable  = "KUBEVIRT_DEPLOY_ISTIO"
+	vmiAppSelectorKey         = "app"
+	vmiAppSelectorValue       = "istio-vmi-app"
+	vmiServerAppSelectorKey   = "app"
+	vmiServerAppSelectorValue = "vmi-server-app"
+	vmiServerHostName         = "vmi-server"
+	vmiServerGateway          = "vmi-server-gw"
+	vmiServerTestPort         = 4200
+	svcDeclaredTestPort       = 1500
+	svcUndeclaredTestPort     = 1501
 	// Istio uses certain ports for it's own purposes, this port server to verify that traffic is not routed
 	// into the VMI for these ports. https://istio.io/latest/docs/ops/deployment/requirements/
 	istioRestrictedPort = istio.EnvoyTunnelPort
@@ -117,11 +120,9 @@ var _ = SIGDescribe("[Serial] Istio", func() {
 			Expect(err).ShouldNot(HaveOccurred())
 
 			By("Creating k8s service for the VMI")
-			service := newService(
-				fmt.Sprintf("%s-service", vmiAppSelector),
-				map[string]string{"app": vmiAppSelector},
-				[]corev1.ServicePort{{Port: svcDeclaredTestPort}},
-			)
+
+			serviceName := fmt.Sprintf("%s-service", vmiAppSelectorValue)
+			service := servicepkg.BuildServiceSpec(serviceName, svcDeclaredTestPort, svcDeclaredTestPort, vmiAppSelectorKey, vmiAppSelectorValue)
 			_, err = virtClient.CoreV1().Services(util.NamespaceTestDefault).Create(context.Background(), service, metav1.CreateOptions{})
 			Expect(err).ShouldNot(HaveOccurred())
 		})
@@ -275,16 +276,12 @@ var _ = SIGDescribe("[Serial] Istio", func() {
 					libvmi.WithNetwork(v1.DefaultPodNetwork()),
 					libvmi.WithInterface(libvmi.InterfaceDeviceWithMasqueradeBinding([]v1.Port{}...)),
 					libvmi.WithLabel("version", "v1"),
-					libvmi.WithLabel("app", vmiServerAppSelector),
+					libvmi.WithLabel(vmiServerAppSelectorKey, vmiServerAppSelectorValue),
 				)
 				serverVMI, err = virtClient.VirtualMachineInstance(util.NamespaceTestDefault).Create(serverVMI)
 				Expect(err).ToNot(HaveOccurred())
 
-				serverVMIService := newService(
-					"vmi-server",
-					map[string]string{"app": vmiServerAppSelector},
-					[]corev1.ServicePort{{Port: vmiServerTestPort}},
-				)
+				serverVMIService := servicepkg.BuildServiceSpec("vmi-server", vmiServerTestPort, vmiServerTestPort, vmiServerAppSelectorKey, vmiServerAppSelectorValue)
 				_, err = virtClient.CoreV1().Services(util.NamespaceTestDefault).Create(context.Background(), serverVMIService, metav1.CreateOptions{})
 				Expect(err).ToNot(HaveOccurred())
 
@@ -411,7 +408,7 @@ func newVMIWithIstioSidecar(ports []v1.Port) *v1.VirtualMachineInstance {
 	vmi := libvmi.NewCirros(
 		libvmi.WithNetwork(v1.DefaultPodNetwork()),
 		libvmi.WithInterface(libvmi.InterfaceDeviceWithMasqueradeBinding(ports...)),
-		libvmi.WithLabel("app", vmiAppSelector),
+		libvmi.WithLabel(vmiAppSelectorKey, vmiAppSelectorValue),
 		libvmi.WithAnnotation(istio.ISTIO_INJECT_ANNOTATION, "true"),
 	)
 	return vmi

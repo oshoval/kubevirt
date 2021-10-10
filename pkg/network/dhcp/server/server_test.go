@@ -192,7 +192,7 @@ var _ = Describe("DHCP Server", func() {
 				"4wg5xngig6vzfqjww4kocnky3c9dqjpwkewzlwpf.com",
 			}
 			ip := net.ParseIP("192.168.2.1")
-			options, err := prepareDHCPOptions(ip.DefaultMask(), ip, nil, nil, searchDomains, 1500, "myhost", nil)
+			options, err := prepareDHCPOptions(ip.DefaultMask(), ip, nil, nil, searchDomains, 1500, "myhost", "", nil)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(options[dhcp4.OptionDomainName]).To(Equal([]byte("14wg5xngig6vzfqjww4kocnky3c9dqjpwkewzlwpf.com")))
 		})
@@ -206,6 +206,8 @@ var _ = Describe("DHCP Server", func() {
 				"4wg5xngig6vzfqjww4kocnky3c9dqjpwkewzlwpf.com",
 			}
 			ip := net.ParseIP("192.168.2.1")
+			hostname := "myhost"
+			subdomain := "testsubdomain"
 
 			dhcpOptions := &v1.DHCPOptions{
 				BootFileName:   "config",
@@ -216,10 +218,11 @@ var _ = Describe("DHCP Server", func() {
 				PrivateOptions: []v1.DHCPPrivateOptions{{Option: 240, Value: "private.options.kubevirt.io"}},
 			}
 
-			options, err := prepareDHCPOptions(ip.DefaultMask(), ip, nil, nil, searchDomains, 1500, "myhost", dhcpOptions)
+			options, err := prepareDHCPOptions(ip.DefaultMask(), ip, nil, nil, searchDomains, 1500, hostname, subdomain, dhcpOptions)
 
 			Expect(err).ToNot(HaveOccurred())
 			Expect(options[dhcp4.OptionBootFileName]).To(Equal([]byte("config")))
+			Expect(options[dhcp4.OptionHostName]).To(Equal([]byte(hostname + "." + subdomain)))
 			Expect(options[dhcp4.OptionTFTPServerName]).To(Equal([]byte("tftp.kubevirt.io")))
 			Expect(options[dhcp4.OptionNetworkTimeProtocolServers]).To(Equal([]byte{
 				192, 168, 2, 2, 192, 168, 2, 3,
@@ -229,7 +232,7 @@ var _ = Describe("DHCP Server", func() {
 
 		It("expects the gateway as an IPv4 addresses", func() {
 			gw := net.ParseIP("192.168.2.1")
-			options, err := prepareDHCPOptions(gw.DefaultMask(), gw, nil, nil, nil, 1500, "myhost", nil)
+			options, err := prepareDHCPOptions(gw.DefaultMask(), gw, nil, nil, nil, 1500, "myhost", "", nil)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(options[dhcp4.OptionRouter]).To(Equal([]byte{192, 168, 2, 1}))
 		})
@@ -247,7 +250,7 @@ var _ = Describe("DHCP Server", func() {
 				options       dhcp4.Options
 			)
 			BeforeEach(func() {
-				options, err = prepareDHCPOptions(clientMask, routerIP, dnsIPs, routes, searchDomains, 1500, hostname, dhcpOptions)
+				options, err = prepareDHCPOptions(clientMask, routerIP, dnsIPs, routes, searchDomains, 1500, hostname, "", dhcpOptions)
 				Expect(err).ToNot(HaveOccurred())
 			})
 			It("should omit RouterIP Option", func() {

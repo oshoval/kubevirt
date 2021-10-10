@@ -35,11 +35,13 @@ import (
 	v12 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
+	k8smetav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	v13 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	netutils "k8s.io/utils/net"
 	"k8s.io/utils/pointer"
 
+	servicepkg "kubevirt.io/kubevirt/tests/libnet/service"
 	"kubevirt.io/kubevirt/tests/util"
 
 	v1 "kubevirt.io/client-go/api/v1"
@@ -648,7 +650,7 @@ var _ = SIGDescribe("[Serial][rfe_id:694][crit:medium][vendor:cnv-qe@redhat.com]
 			vmi := libvmi.NewFedora(
 				libvmi.WithInterface(libvmi.InterfaceDeviceWithMasqueradeBinding(ports...)),
 				libvmi.WithNetwork(net),
-				libvmi.WithCloudInitNoCloudNetworkData(networkData, false),
+				libvmi.WithCloudInitNoCloudNetworkData(networkData, false), // worked if i removed this (also working with it)
 			)
 
 			return vmi, nil
@@ -681,6 +683,48 @@ var _ = SIGDescribe("[Serial][rfe_id:694][crit:medium][vendor:cnv-qe@redhat.com]
 				{Port: LibvirtBlockMigrationPort},
 			}
 		}
+
+		// TODO remove F
+		Context("TBD", func() {
+
+			// basicFedoraMasqueradeVmiWithSubdomain := func(subdomain string, ports []v1.Port) (*v1.VirtualMachineInstance, error) {
+			// 	net := v1.DefaultPodNetwork()
+			// 	vmi := libvmi.NewFedora(
+			// 		libvmi.WithInterface(libvmi.InterfaceDeviceWithMasqueradeBinding(ports...)),
+			// 		libvmi.WithNetwork(net),
+			// 	)
+			// 	vmi.Spec.Subdomain = subdomain
+
+			// 	return vmi, nil
+			// }
+
+			var clientVMI *v1.VirtualMachineInstance
+
+			It("TBD", func() {
+				// TODO this didnt work even with wait for GA (don't need actually)
+				// clientVMI, err = basicFedoraMasqueradeVmiWithSubdomain("testsubdomain", []v1.Port{})
+				// Expect(err).ToNot(HaveOccurred())
+				// clientVMI, err = virtClient.VirtualMachineInstance(util.NamespaceTestDefault).Create(clientVMI)
+				// Expect(err).ToNot(HaveOccurred())
+				// clientVMI = tests.WaitUntilVMIReady(clientVMI, console.LoginToFedora)
+
+				clientVMI, err = fedoraMasqueradeVMI([]v1.Port{}, api.DefaultVMCIDR)
+				Expect(err).ToNot(HaveOccurred())
+				clientVMI, err = virtClient.VirtualMachineInstance(util.NamespaceTestDefault).Create(clientVMI)
+				Expect(err).ToNot(HaveOccurred())
+				clientVMI = tests.WaitUntilVMIReady(clientVMI, console.LoginToFedora)
+				Expect(configureIpv6(clientVMI, api.DefaultVMCIDR)).To(Succeed(), "failed to configure ipv6 on client vmi")
+
+				// TODO this doesnt work ,it gives false positive (when was just name, that maybe matched with login or so)
+				Expect(console.SafeExpectBatch(clientVMI, []expect.Batcher{
+					&expect.BSnd{S: "\n"},
+					&expect.BExp{R: console.PromptExpression},
+					&expect.BSnd{S: "hostname -f\n"},
+					&expect.BExp{R: clientVMI.ObjectMeta.Name}, // adding  + "." + "testsubdomain" makes it fails
+				}, 10)).To(Succeed(), "failed to get expected hostname")
+			})
+
+		})
 
 		Context("[Conformance][test_id:1780][label:masquerade_binding_connectivity]should allow regular network connection", func() {
 
@@ -770,6 +814,9 @@ var _ = SIGDescribe("[Serial][rfe_id:694][crit:medium][vendor:cnv-qe@redhat.com]
 
 				clientVMI, err = fedoraMasqueradeVMI([]v1.Port{}, networkCIDR)
 				Expect(err).ToNot(HaveOccurred())
+				clientVMI.Spec.Subdomain = "mysubdomain"
+				clientVMI.Labels = map[string]string{"expose": "me"} // with the one i created manually it worked
+
 				clientVMI, err = virtClient.VirtualMachineInstance(util.NamespaceTestDefault).Create(clientVMI)
 				Expect(err).ToNot(HaveOccurred())
 				clientVMI = tests.WaitUntilVMIReady(clientVMI, console.LoginToFedora)
@@ -793,7 +840,29 @@ var _ = SIGDescribe("[Serial][rfe_id:694][crit:medium][vendor:cnv-qe@redhat.com]
 				tests.StartPythonHttpServer(serverVMI, tcpPort)
 
 				Expect(verifyClientServerConnectivity(clientVMI, serverVMI, tcpPort, k8sv1.IPv6Protocol)).To(Succeed())
+
+				const (
+					selectorLabelKey   = "expose"
+					selectorLabelValue = "me"
+					servicePort        = 22
+				)
+
+				service := servicepkg.BuildHeadlessSpec("mysubdomain", servicePort, servicePort, selectorLabelKey, selectorLabelValue)
+				_, err := virtClient.CoreV1().Services(clientVMI.Namespace).Create(context.Background(), service, k8smetav1.CreateOptions{})
+				Expect(err).ToNot(HaveOccurred())
+
+				// DEBUG remove
+				// ADD service
+				Expect(console.SafeExpectBatch(clientVMI, []expect.Batcher{
+					&expect.BSnd{S: "\n"},
+					&expect.BExp{R: console.PromptExpression},
+					&expect.BSnd{S: "hostname -f\n"},
+					//testvmi.mysubdomain.default.svc.cluster.local  the first two worked
+					&expect.BExp{R: clientVMI.Name + "." + "mysubdomain." + clientVMI.Namespace + ".svc.cluster.local"},
+					// adding  + "." + "mysubdomain" makes it fails
+				}, 10)).To(Succeed(), "failed to get expected hostname")
 			},
+				// TODO remove F
 				table.Entry("with a specific port number [IPv6]", []v1.Port{{Name: "http", Port: 8080}}, 8080, ""),
 				table.Entry("with a specific port used by live migration", portsUsedByLiveMigration(), LibvirtDirectMigrationPort, ""),
 				table.Entry("without a specific port number [IPv6]", []v1.Port{}, 8080, ""),
@@ -1156,3 +1225,33 @@ func gatewayIPFromCIDR(cidr string) string {
 	ip[oct]++
 	return ip.String()
 }
+
+// func buildHeadlessServiceSpec(serviceName string, exposedPort int, portToExpose int, selectorKey string, selectorValue string) *k8sv1.Service {
+// 	service := buildServiceSpec(serviceName, exposedPort, portToExpose, selectorKey, selectorValue)
+// 	service.Spec.ClusterIP = k8sv1.ClusterIPNone
+// 	return service
+// }
+
+// func buildIPv6ServiceSpec(serviceName string, exposedPort int, portToExpose int, selectorKey string, selectorValue string) *k8sv1.Service {
+// 	service := buildServiceSpec(serviceName, exposedPort, portToExpose, selectorKey, selectorValue)
+// 	ipv6Family := k8sv1.IPv6Protocol
+// 	service.Spec.IPFamilies = []k8sv1.IPFamily{ipv6Family}
+
+// 	return service
+// }
+
+// func buildServiceSpec(serviceName string, exposedPort int, portToExpose int, selectorKey string, selectorValue string) *k8sv1.Service {
+// 	return &k8sv1.Service{
+// 		ObjectMeta: k8smetav1.ObjectMeta{
+// 			Name: serviceName,
+// 		},
+// 		Spec: k8sv1.ServiceSpec{
+// 			Selector: map[string]string{
+// 				selectorKey: selectorValue,
+// 			},
+// 			Ports: []k8sv1.ServicePort{
+// 				{Protocol: k8sv1.ProtocolTCP, Port: int32(portToExpose), TargetPort: intstr.FromInt(exposedPort)},
+// 			},
+// 		},
+// 	}
+// }

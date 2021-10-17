@@ -1,0 +1,42 @@
+From 29ec342f56ae8ef363fd1fd28847c982d8eb51f0 Mon Sep 17 00:00:00 2001
+From: Or Shoval <oshoval@redhat.com>
+Date: Sun, 17 Oct 2021 13:20:00 +0300
+Subject: [PATCH] check windows
+
+Signed-off-by: Or Shoval <oshoval@redhat.com>
+---
+ tests/windows_test.go | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/tests/windows_test.go b/tests/windows_test.go
+index ed5b6dced..30dd15023 100644
+--- a/tests/windows_test.go
++++ b/tests/windows_test.go
+@@ -132,6 +132,7 @@ var _ = Describe("[Serial][sig-compute]Windows VirtualMachineInstance", func() {
+ 		windowsVMI.Spec = getWindowsVMISpec()
+ 		tests.AddExplicitPodNetworkInterface(windowsVMI)
+ 		windowsVMI.Spec.Domain.Devices.Interfaces[0].Model = "e1000"
++		windowsVMI.Spec.Subdomain = "subdomain"
+ 	})
+ 
+ 	It("[test_id:487]should succeed to start a vmi", func() {
+@@ -254,6 +255,7 @@ var _ = Describe("[Serial][sig-compute]Windows VirtualMachineInstance", func() {
+ 				return err
+ 			}, time.Minute*5, time.Second*15).ShouldNot(HaveOccurred())
+ 
++			expectedSearchDomain := windowsVMI.Spec.Subdomain + "." + searchDomain
+ 			By("repeatedly trying to get the search domain, since it may take some time until the domain is set")
+ 			Eventually(func() string {
+ 				output, err = tests.ExecuteCommandOnPod(
+@@ -264,7 +266,7 @@ var _ = Describe("[Serial][sig-compute]Windows VirtualMachineInstance", func() {
+ 				)
+ 				Expect(err).ToNot(HaveOccurred())
+ 				return output
+-			}, time.Minute*1, time.Second*10).Should(MatchRegexp(`DNSDomain[\n\r\t ]+` + searchDomain + `[\n\r\t ]+`))
++			}, time.Minute*1, time.Second*10).Should(MatchRegexp(`DNSDomain[\n\r\t ]+` + expectedSearchDomain + `[\n\r\t ]+`))
+ 		}, 360)
+ 	})
+ 
+-- 
+2.24.1
+

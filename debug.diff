@@ -1,0 +1,14 @@
+diff --git a/tests/utils.go b/tests/utils.go
+index eff3a97a8..2d7e9d6df 100644
+--- a/tests/utils.go
++++ b/tests/utils.go
+@@ -4143,7 +4143,8 @@ func StartVmOnNode(vmi *v1.VirtualMachineInstance, nodeName string) *v1.VirtualM
+ 
+ 	vmi, err = virtClient.VirtualMachineInstance(util2.NamespaceTestDefault).Create(vmi)
+ 	ExpectWithOffset(1, err).ToNot(HaveOccurred())
+-	WaitForSuccessfulVMIStart(vmi)
++	WaitForSuccessfulVMIStartWithTimeoutIgnoreWarnings(vmi, 360)
++	//WaitForSuccessfulVMIStart(vmi)
+ 	return vmi
+ }
+ 

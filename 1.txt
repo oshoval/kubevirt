@@ -1,0 +1,61 @@
+apiVersion: kubevirt.io/v1
+kind: VirtualMachine
+metadata:
+  labels:
+    kubevirt.io/vm: oper-test-vm
+  name: test-vm
+spec:
+  running: false
+  template:
+    metadata:
+      labels:
+        kubevirt.io/vm: fedora-vm
+    spec:
+      subdomain: mysubdomain
+      domain:
+        cpu:
+          cores: 1
+        devices:
+          disks:
+          - disk:
+              bus: virtio
+            name: containerdisk
+          - disk:
+              bus: virtio
+            name: disk1
+          interfaces:
+          - masquerade: {}
+            name: default
+        machine:
+          type: ""
+        resources:
+          requests:
+            memory: 1024Mi
+      networks:
+      - name: default
+        pod: {}
+      terminationGracePeriodSeconds: 0
+      volumes:
+      - containerDisk:
+          image: registry:5000/kubevirt/fedora-with-test-tooling-container-disk:devel
+          imagePullPolicy: IfNotPresent
+        name: containerdisk
+      - cloudInitConfigDrive:
+          networkData: |
+            ethernets:
+              eth0:
+                addresses:
+                - fd10:0:2::2/120
+                dhcp4: true
+                gateway6: fd10:0:2::1
+                match: {}
+                nameservers:
+                  addresses:
+                  - 10.96.0.10
+                  search:
+                  - default.svc.cluster.local
+                  - svc.cluster.local
+                  - cluster.local
+            version: 2
+        name: disk1
+

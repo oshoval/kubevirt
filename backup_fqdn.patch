@@ -1,0 +1,200 @@
+From 2977cd4439085a247fbf94ebe9c18ac2bbb5f2c9 Mon Sep 17 00:00:00 2001
+From: Or Shoval <oshoval@redhat.com>
+Date: Mon, 4 Oct 2021 16:11:08 +0300
+Subject: [PATCH] WIP, propogate subdomain to be part of VM hostname
+
+Signed-off-by: Or Shoval <oshoval@redhat.com>
+---
+ pkg/cloud-init/cloud-init.go      | 11 ++++++++---
+ pkg/network/cache/types.go        |  1 +
+ pkg/network/dhcp/bridge.go        |  3 ++-
+ pkg/network/dhcp/configurator.go  |  8 ++++----
+ pkg/network/dhcp/masquerade.go    |  3 ++-
+ pkg/network/dhcp/server/server.go | 10 ++++++++--
+ pkg/network/driver/common.go      |  1 +
+ pkg/network/setup/podnic.go       |  2 +-
+ 8 files changed, 27 insertions(+), 12 deletions(-)
+
+diff --git a/pkg/cloud-init/cloud-init.go b/pkg/cloud-init/cloud-init.go
+index 4951971a916..079402720cf 100644
+--- a/pkg/cloud-init/cloud-init.go
++++ b/pkg/cloud-init/cloud-init.go
+@@ -118,7 +118,7 @@ func ReadCloudInitVolumeDataSource(vmi *v1.VirtualMachineInstance, secretSourceD
+ 			}
+ 
+ 			cloudInitData, err = readCloudInitNoCloudSource(volume.CloudInitNoCloud)
+-			cloudInitData.NoCloudMetaData = readCloudInitNoCloudMetaData(vmi.Name, hostname, vmi.Namespace)
++			cloudInitData.NoCloudMetaData = readCloudInitNoCloudMetaData(vmi.Name, hostname, vmi.Namespace, vmi.Spec.Subdomain)
+ 			cloudInitData.VolumeName = volume.Name
+ 			return cloudInitData, err
+ 		}
+@@ -353,10 +353,15 @@ func readCloudInitConfigDriveSource(source *v1.CloudInitConfigDriveSource) (*Clo
+ 	}, nil
+ }
+ 
+-func readCloudInitNoCloudMetaData(name, hostname, namespace string) *NoCloudMetadata {
++func readCloudInitNoCloudMetaData(name, hostname, namespace, subdomain string) *NoCloudMetadata {
++	localHostName := hostname
++	if subdomain != "" {
++		localHostName = hostname + "." + subdomain
++	}
++
+ 	return &NoCloudMetadata{
+ 		InstanceID:    fmt.Sprintf("%s.%s", name, namespace),
+-		LocalHostname: hostname,
++		LocalHostname: localHostName,
+ 	}
+ }
+ 
+diff --git a/pkg/network/cache/types.go b/pkg/network/cache/types.go
+index f061054335f..20135ada929 100644
+--- a/pkg/network/cache/types.go
++++ b/pkg/network/cache/types.go
+@@ -35,6 +35,7 @@ type DHCPConfig struct {
+ 	Mtu                 uint16
+ 	IPAMDisabled        bool
+ 	Gateway             net.IP
++	Subdomain           string
+ }
+ 
+ func (d DHCPConfig) String() string {
+diff --git a/pkg/network/dhcp/bridge.go b/pkg/network/dhcp/bridge.go
+index 56fd60b88ae..af4f4b633f1 100644
+--- a/pkg/network/dhcp/bridge.go
++++ b/pkg/network/dhcp/bridge.go
+@@ -18,7 +18,7 @@ type BridgeConfigGenerator struct {
+ 	vmiSpecIface     *v1.Interface
+ }
+ 
+-func (d *BridgeConfigGenerator) Generate() (*cache.DHCPConfig, error) {
++func (d *BridgeConfigGenerator) Generate(subdomain string) (*cache.DHCPConfig, error) {
+ 	dhcpConfig, err := d.cacheFactory.CacheDHCPConfigForPid(d.launcherPID).Read(d.podInterfaceName)
+ 	if err != nil {
+ 		return nil, err
+@@ -40,6 +40,7 @@ func (d *BridgeConfigGenerator) Generate() (*cache.DHCPConfig, error) {
+ 		return nil, err
+ 	}
+ 	dhcpConfig.Mtu = uint16(podNicLink.Attrs().MTU)
++	dhcpConfig.Subdomain = subdomain
+ 
+ 	return dhcpConfig, nil
+ }
+diff --git a/pkg/network/dhcp/configurator.go b/pkg/network/dhcp/configurator.go
+index d3bea5b9649..14a24728cad 100644
+--- a/pkg/network/dhcp/configurator.go
++++ b/pkg/network/dhcp/configurator.go
+@@ -34,7 +34,7 @@ const defaultDHCPStartedDirectory = "/var/run/kubevirt-private"
+ 
+ type Configurator interface {
+ 	EnsureDHCPServerStarted(podInterfaceName string, dhcpConfig cache.DHCPConfig, dhcpOptions *v1.DHCPOptions) error
+-	Generate() (*cache.DHCPConfig, error)
++	Generate(string) (*cache.DHCPConfig, error)
+ }
+ 
+ type configurator struct {
+@@ -46,7 +46,7 @@ type configurator struct {
+ }
+ 
+ type ConfigGenerator interface {
+-	Generate() (*cache.DHCPConfig, error)
++	Generate(string) (*cache.DHCPConfig, error)
+ }
+ 
+ func NewBridgeConfigurator(cacheFactory cache.InterfaceCacheFactory, launcherPID string, advertisingIfaceName string, handler netdriver.NetworkHandler, podInterfaceName string,
+@@ -93,6 +93,6 @@ func (d *configurator) getDHCPStartedFilePath(podInterfaceName string) string {
+ 	return fmt.Sprintf("%s/dhcp_started-%s", d.dhcpStartedDirectory, podInterfaceName)
+ }
+ 
+-func (d *configurator) Generate() (*cache.DHCPConfig, error) {
+-	return d.configGenerator.Generate()
++func (d *configurator) Generate(subdomain string) (*cache.DHCPConfig, error) {
++	return d.configGenerator.Generate(subdomain)
+ }
+diff --git a/pkg/network/dhcp/masquerade.go b/pkg/network/dhcp/masquerade.go
+index 5074eeed311..5591987457a 100644
+--- a/pkg/network/dhcp/masquerade.go
++++ b/pkg/network/dhcp/masquerade.go
+@@ -35,7 +35,7 @@ type MasqueradeConfigGenerator struct {
+ 	podInterfaceName string
+ }
+ 
+-func (d *MasqueradeConfigGenerator) Generate() (*cache.DHCPConfig, error) {
++func (d *MasqueradeConfigGenerator) Generate(subdomain string) (*cache.DHCPConfig, error) {
+ 	dhcpConfig := &cache.DHCPConfig{}
+ 	podNicLink, err := d.handler.LinkByName(d.podInterfaceName)
+ 	if err != nil {
+@@ -59,6 +59,7 @@ func (d *MasqueradeConfigGenerator) Generate() (*cache.DHCPConfig, error) {
+ 	}
+ 	dhcpConfig.IPv6 = *ipv6
+ 	dhcpConfig.AdvertisingIPv6Addr = ipv6Gateway.IP.To16()
++	dhcpConfig.Subdomain = subdomain
+ 
+ 	return dhcpConfig, nil
+ }
+diff --git a/pkg/network/dhcp/server/server.go b/pkg/network/dhcp/server/server.go
+index 23289b847c7..fbdcaf616e5 100644
+--- a/pkg/network/dhcp/server/server.go
++++ b/pkg/network/dhcp/server/server.go
+@@ -58,6 +58,7 @@ func SingleClientDHCPServer(
+ 	routes *[]netlink.Route,
+ 	searchDomains []string,
+ 	mtu uint16,
++	subdomaing string,
+ 	customDHCPOptions *v1.DHCPOptions) error {
+ 
+ 	log.Log.Info("Starting SingleClientDHCPServer")
+@@ -67,7 +68,7 @@ func SingleClientDHCPServer(
+ 		return fmt.Errorf("reading the pods hostname failed: %v", err)
+ 	}
+ 
+-	options, err := prepareDHCPOptions(clientMask, routerIP, dnsIPs, routes, searchDomains, mtu, hostname, customDHCPOptions)
++	options, err := prepareDHCPOptions(clientMask, routerIP, dnsIPs, routes, searchDomains, mtu, hostname, subdomaing, customDHCPOptions)
+ 	if err != nil {
+ 		return err
+ 	}
+@@ -100,6 +101,7 @@ func prepareDHCPOptions(
+ 	searchDomains []string,
+ 	mtu uint16,
+ 	hostname string,
++	subdomain string,
+ 	customDHCPOptions *v1.DHCPOptions) (dhcp.Options, error) {
+ 
+ 	mtuArray := make([]byte, 2)
+@@ -131,7 +133,11 @@ func prepareDHCPOptions(
+ 		dhcpOptions[dhcp.OptionDomainSearch] = searchDomainBytes
+ 	}
+ 
+-	dhcpOptions[dhcp.OptionHostName] = []byte(hostname)
++	if subdomain != "" {
++		dhcpOptions[dhcp.OptionHostName] = []byte(hostname + "." + subdomain)
++	} else {
++		dhcpOptions[dhcp.OptionHostName] = []byte(hostname)
++	}
+ 
+ 	// Windows will ask for the domain name and use it for DNS resolution
+ 	domainName := getDomainName(searchDomains)
+diff --git a/pkg/network/driver/common.go b/pkg/network/driver/common.go
+index 9eb930d6d17..7f1d09c4a1b 100644
+--- a/pkg/network/driver/common.go
++++ b/pkg/network/driver/common.go
+@@ -357,6 +357,7 @@ func (h *NetworkUtilsHandler) StartDHCP(nic *cache.DHCPConfig, bridgeInterfaceNa
+ 			nic.Routes,
+ 			searchDomains,
+ 			nic.Mtu,
++			nic.Subdomain,
+ 			dhcpOptions,
+ 		); err != nil {
+ 			log.Log.Errorf("failed to run DHCP: %v", err)
+diff --git a/pkg/network/setup/podnic.go b/pkg/network/setup/podnic.go
+index 95fc1bd4b9a..bf558360d49 100644
+--- a/pkg/network/setup/podnic.go
++++ b/pkg/network/setup/podnic.go
+@@ -245,7 +245,7 @@ func (l *podNIC) PlugPhase2(domain *api.Domain) error {
+ 	}
+ 
+ 	if l.dhcpConfigurator != nil {
+-		dhcpConfig, err := l.dhcpConfigurator.Generate()
++		dhcpConfig, err := l.dhcpConfigurator.Generate(l.vmi.Spec.Subdomain)
+ 		if err != nil {
+ 			log.Log.Reason(err).Errorf("failed to get a dhcp configuration for: %s", l.podInterfaceName)
+ 			return err

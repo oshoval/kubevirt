@@ -1,0 +1,571 @@
+From 515318525ebb6537b42af42c72f5cd1ddc552ed7 Mon Sep 17 00:00:00 2001
+From: Or Shoval <oshoval@redhat.com>
+Date: Sun, 10 Oct 2021 13:15:58 +0300
+Subject: [PATCH] virt-launcher, Propogate subdomain name to VM
+
+Signed-off-by: Or Shoval <oshoval@redhat.com>
+---
+ pkg/cloud-init/cloud-init.go           |  11 ++-
+ pkg/network/cache/types.go             |   1 +
+ pkg/network/dhcp/bridge.go             |   2 +
+ pkg/network/dhcp/configurator.go       |  11 ++-
+ pkg/network/dhcp/configurator_test.go  |   4 +-
+ pkg/network/dhcp/masquerade.go         |   2 +
+ pkg/network/dhcp/server/server.go      |  10 ++-
+ pkg/network/dhcp/server/server_test.go |  11 ++-
+ pkg/network/driver/common.go           |   1 +
+ pkg/network/setup/podnic.go            |   6 +-
+ tests/network/BUILD.bazel              |   1 +
+ tests/network/services.go              |   1 +
+ tests/network/vmi_networking.go        | 101 ++++++++++++++++++++++++-
+ tests/network/vmi_subdomain.go         |  98 ++++++++++++++++++++++++
+ 14 files changed, 242 insertions(+), 18 deletions(-)
+ create mode 100644 tests/network/vmi_subdomain.go
+
+diff --git a/pkg/cloud-init/cloud-init.go b/pkg/cloud-init/cloud-init.go
+index 4951971a9..079402720 100644
+--- a/pkg/cloud-init/cloud-init.go
++++ b/pkg/cloud-init/cloud-init.go
+@@ -118,7 +118,7 @@ func ReadCloudInitVolumeDataSource(vmi *v1.VirtualMachineInstance, secretSourceD
+ 			}
+ 
+ 			cloudInitData, err = readCloudInitNoCloudSource(volume.CloudInitNoCloud)
+-			cloudInitData.NoCloudMetaData = readCloudInitNoCloudMetaData(vmi.Name, hostname, vmi.Namespace)
++			cloudInitData.NoCloudMetaData = readCloudInitNoCloudMetaData(vmi.Name, hostname, vmi.Namespace, vmi.Spec.Subdomain)
+ 			cloudInitData.VolumeName = volume.Name
+ 			return cloudInitData, err
+ 		}
+@@ -353,10 +353,15 @@ func readCloudInitConfigDriveSource(source *v1.CloudInitConfigDriveSource) (*Clo
+ 	}, nil
+ }
+ 
+-func readCloudInitNoCloudMetaData(name, hostname, namespace string) *NoCloudMetadata {
++func readCloudInitNoCloudMetaData(name, hostname, namespace, subdomain string) *NoCloudMetadata {
++	localHostName := hostname
++	if subdomain != "" {
++		localHostName = hostname + "." + subdomain
++	}
++
+ 	return &NoCloudMetadata{
+ 		InstanceID:    fmt.Sprintf("%s.%s", name, namespace),
+-		LocalHostname: hostname,
++		LocalHostname: localHostName,
+ 	}
+ }
+ 
+diff --git a/pkg/network/cache/types.go b/pkg/network/cache/types.go
+index f06105433..20135ada9 100644
+--- a/pkg/network/cache/types.go
++++ b/pkg/network/cache/types.go
+@@ -35,6 +35,7 @@ type DHCPConfig struct {
+ 	Mtu                 uint16
+ 	IPAMDisabled        bool
+ 	Gateway             net.IP
++	Subdomain           string
+ }
+ 
+ func (d DHCPConfig) String() string {
+diff --git a/pkg/network/dhcp/bridge.go b/pkg/network/dhcp/bridge.go
+index 56fd60b88..33c5350f0 100644
+--- a/pkg/network/dhcp/bridge.go
++++ b/pkg/network/dhcp/bridge.go
+@@ -16,6 +16,7 @@ type BridgeConfigGenerator struct {
+ 	launcherPID      string
+ 	vmiSpecIfaces    []v1.Interface
+ 	vmiSpecIface     *v1.Interface
++	subdomain        string
+ }
+ 
+ func (d *BridgeConfigGenerator) Generate() (*cache.DHCPConfig, error) {
+@@ -40,6 +41,7 @@ func (d *BridgeConfigGenerator) Generate() (*cache.DHCPConfig, error) {
+ 		return nil, err
+ 	}
+ 	dhcpConfig.Mtu = uint16(podNicLink.Attrs().MTU)
++	dhcpConfig.Subdomain = d.subdomain
+ 
+ 	return dhcpConfig, nil
+ }
+diff --git a/pkg/network/dhcp/configurator.go b/pkg/network/dhcp/configurator.go
+index d3bea5b96..819f3339b 100644
+--- a/pkg/network/dhcp/configurator.go
++++ b/pkg/network/dhcp/configurator.go
+@@ -50,21 +50,24 @@ type ConfigGenerator interface {
+ }
+ 
+ func NewBridgeConfigurator(cacheFactory cache.InterfaceCacheFactory, launcherPID string, advertisingIfaceName string, handler netdriver.NetworkHandler, podInterfaceName string,
+-	vmiSpecIfaces []v1.Interface, vmiSpecIface *v1.Interface) *configurator {
++	vmiSpecIfaces []v1.Interface, vmiSpecIface *v1.Interface, subdomain string) *configurator {
+ 	return &configurator{
+ 		podInterfaceName:     podInterfaceName,
+ 		advertisingIfaceName: advertisingIfaceName,
+ 		handler:              handler,
+ 		dhcpStartedDirectory: defaultDHCPStartedDirectory,
+-		configGenerator:      &BridgeConfigGenerator{handler: handler, cacheFactory: cacheFactory, podInterfaceName: podInterfaceName, launcherPID: launcherPID, vmiSpecIfaces: vmiSpecIfaces, vmiSpecIface: vmiSpecIface},
++		configGenerator: &BridgeConfigGenerator{handler: handler, cacheFactory: cacheFactory, podInterfaceName: podInterfaceName, launcherPID: launcherPID,
++			vmiSpecIfaces: vmiSpecIfaces, vmiSpecIface: vmiSpecIface, subdomain: subdomain},
+ 	}
+ }
+ 
+-func NewMasqueradeConfigurator(advertisingIfaceName string, handler netdriver.NetworkHandler, vmiSpecIface *v1.Interface, vmiSpecNetwork *v1.Network, podInterfaceName string) *configurator {
++func NewMasqueradeConfigurator(advertisingIfaceName string, handler netdriver.NetworkHandler, vmiSpecIface *v1.Interface, vmiSpecNetwork *v1.Network, podInterfaceName string,
++	subdomain string) *configurator {
+ 	return &configurator{
+ 		podInterfaceName:     podInterfaceName,
+ 		advertisingIfaceName: advertisingIfaceName,
+-		configGenerator:      &MasqueradeConfigGenerator{handler: handler, vmiSpecIface: vmiSpecIface, vmiSpecNetwork: vmiSpecNetwork, podInterfaceName: podInterfaceName},
++		configGenerator: &MasqueradeConfigGenerator{handler: handler, vmiSpecIface: vmiSpecIface, vmiSpecNetwork: vmiSpecNetwork,
++			subdomain: subdomain, podInterfaceName: podInterfaceName},
+ 		handler:              handler,
+ 		dhcpStartedDirectory: defaultDHCPStartedDirectory,
+ 	}
+diff --git a/pkg/network/dhcp/configurator_test.go b/pkg/network/dhcp/configurator_test.go
+index cdc6a87d7..9f04a41aa 100644
+--- a/pkg/network/dhcp/configurator_test.go
++++ b/pkg/network/dhcp/configurator_test.go
+@@ -36,13 +36,13 @@ var _ = Describe("DHCP configurator", func() {
+ 	})
+ 
+ 	newBridgeConfigurator := func(launcherPID string, advertisingIfaceName string) Configurator {
+-		configurator := NewBridgeConfigurator(cache.NewInterfaceCacheFactoryWithBasePath(fakeDhcpStartedDir), launcherPID, advertisingIfaceName, netdriver.NewMockNetworkHandler(gomock.NewController(GinkgoT())), "", nil, nil)
++		configurator := NewBridgeConfigurator(cache.NewInterfaceCacheFactoryWithBasePath(fakeDhcpStartedDir), launcherPID, advertisingIfaceName, netdriver.NewMockNetworkHandler(gomock.NewController(GinkgoT())), "", nil, nil, "")
+ 		configurator.dhcpStartedDirectory = fakeDhcpStartedDir
+ 		return configurator
+ 	}
+ 
+ 	newMasqueradeConfigurator := func(advertisingIfaceName string) Configurator {
+-		configurator := NewMasqueradeConfigurator(advertisingIfaceName, netdriver.NewMockNetworkHandler(gomock.NewController(GinkgoT())), nil, nil, "")
++		configurator := NewMasqueradeConfigurator(advertisingIfaceName, netdriver.NewMockNetworkHandler(gomock.NewController(GinkgoT())), nil, nil, "", "")
+ 		configurator.dhcpStartedDirectory = fakeDhcpStartedDir
+ 		return configurator
+ 	}
+diff --git a/pkg/network/dhcp/masquerade.go b/pkg/network/dhcp/masquerade.go
+index 5074eeed3..0be7f0b4a 100644
+--- a/pkg/network/dhcp/masquerade.go
++++ b/pkg/network/dhcp/masquerade.go
+@@ -33,6 +33,7 @@ type MasqueradeConfigGenerator struct {
+ 	vmiSpecIface     *v1.Interface
+ 	vmiSpecNetwork   *v1.Network
+ 	podInterfaceName string
++	subdomain        string
+ }
+ 
+ func (d *MasqueradeConfigGenerator) Generate() (*cache.DHCPConfig, error) {
+@@ -59,6 +60,7 @@ func (d *MasqueradeConfigGenerator) Generate() (*cache.DHCPConfig, error) {
+ 	}
+ 	dhcpConfig.IPv6 = *ipv6
+ 	dhcpConfig.AdvertisingIPv6Addr = ipv6Gateway.IP.To16()
++	dhcpConfig.Subdomain = d.subdomain
+ 
+ 	return dhcpConfig, nil
+ }
+diff --git a/pkg/network/dhcp/server/server.go b/pkg/network/dhcp/server/server.go
+index 23289b847..fbdcaf616 100644
+--- a/pkg/network/dhcp/server/server.go
++++ b/pkg/network/dhcp/server/server.go
+@@ -58,6 +58,7 @@ func SingleClientDHCPServer(
+ 	routes *[]netlink.Route,
+ 	searchDomains []string,
+ 	mtu uint16,
++	subdomaing string,
+ 	customDHCPOptions *v1.DHCPOptions) error {
+ 
+ 	log.Log.Info("Starting SingleClientDHCPServer")
+@@ -67,7 +68,7 @@ func SingleClientDHCPServer(
+ 		return fmt.Errorf("reading the pods hostname failed: %v", err)
+ 	}
+ 
+-	options, err := prepareDHCPOptions(clientMask, routerIP, dnsIPs, routes, searchDomains, mtu, hostname, customDHCPOptions)
++	options, err := prepareDHCPOptions(clientMask, routerIP, dnsIPs, routes, searchDomains, mtu, hostname, subdomaing, customDHCPOptions)
+ 	if err != nil {
+ 		return err
+ 	}
+@@ -100,6 +101,7 @@ func prepareDHCPOptions(
+ 	searchDomains []string,
+ 	mtu uint16,
+ 	hostname string,
++	subdomain string,
+ 	customDHCPOptions *v1.DHCPOptions) (dhcp.Options, error) {
+ 
+ 	mtuArray := make([]byte, 2)
+@@ -131,7 +133,11 @@ func prepareDHCPOptions(
+ 		dhcpOptions[dhcp.OptionDomainSearch] = searchDomainBytes
+ 	}
+ 
+-	dhcpOptions[dhcp.OptionHostName] = []byte(hostname)
++	if subdomain != "" {
++		dhcpOptions[dhcp.OptionHostName] = []byte(hostname + "." + subdomain)
++	} else {
++		dhcpOptions[dhcp.OptionHostName] = []byte(hostname)
++	}
+ 
+ 	// Windows will ask for the domain name and use it for DNS resolution
+ 	domainName := getDomainName(searchDomains)
+diff --git a/pkg/network/dhcp/server/server_test.go b/pkg/network/dhcp/server/server_test.go
+index f64d70271..d2e85d173 100644
+--- a/pkg/network/dhcp/server/server_test.go
++++ b/pkg/network/dhcp/server/server_test.go
+@@ -192,7 +192,7 @@ var _ = Describe("DHCP Server", func() {
+ 				"4wg5xngig6vzfqjww4kocnky3c9dqjpwkewzlwpf.com",
+ 			}
+ 			ip := net.ParseIP("192.168.2.1")
+-			options, err := prepareDHCPOptions(ip.DefaultMask(), ip, nil, nil, searchDomains, 1500, "myhost", nil)
++			options, err := prepareDHCPOptions(ip.DefaultMask(), ip, nil, nil, searchDomains, 1500, "myhost", "", nil)
+ 			Expect(err).ToNot(HaveOccurred())
+ 			Expect(options[dhcp4.OptionDomainName]).To(Equal([]byte("14wg5xngig6vzfqjww4kocnky3c9dqjpwkewzlwpf.com")))
+ 		})
+@@ -206,6 +206,8 @@ var _ = Describe("DHCP Server", func() {
+ 				"4wg5xngig6vzfqjww4kocnky3c9dqjpwkewzlwpf.com",
+ 			}
+ 			ip := net.ParseIP("192.168.2.1")
++			hostname := "myhost"
++			subdomain := "testsubdomain"
+ 
+ 			dhcpOptions := &v1.DHCPOptions{
+ 				BootFileName:   "config",
+@@ -216,10 +218,11 @@ var _ = Describe("DHCP Server", func() {
+ 				PrivateOptions: []v1.DHCPPrivateOptions{{Option: 240, Value: "private.options.kubevirt.io"}},
+ 			}
+ 
+-			options, err := prepareDHCPOptions(ip.DefaultMask(), ip, nil, nil, searchDomains, 1500, "myhost", dhcpOptions)
++			options, err := prepareDHCPOptions(ip.DefaultMask(), ip, nil, nil, searchDomains, 1500, hostname, subdomain, dhcpOptions)
+ 
+ 			Expect(err).ToNot(HaveOccurred())
+ 			Expect(options[dhcp4.OptionBootFileName]).To(Equal([]byte("config")))
++			Expect(options[dhcp4.OptionHostName]).To(Equal([]byte(hostname + "." + subdomain)))
+ 			Expect(options[dhcp4.OptionTFTPServerName]).To(Equal([]byte("tftp.kubevirt.io")))
+ 			Expect(options[dhcp4.OptionNetworkTimeProtocolServers]).To(Equal([]byte{
+ 				192, 168, 2, 2, 192, 168, 2, 3,
+@@ -229,7 +232,7 @@ var _ = Describe("DHCP Server", func() {
+ 
+ 		It("expects the gateway as an IPv4 addresses", func() {
+ 			gw := net.ParseIP("192.168.2.1")
+-			options, err := prepareDHCPOptions(gw.DefaultMask(), gw, nil, nil, nil, 1500, "myhost", nil)
++			options, err := prepareDHCPOptions(gw.DefaultMask(), gw, nil, nil, nil, 1500, "myhost", "", nil)
+ 			Expect(err).NotTo(HaveOccurred())
+ 			Expect(options[dhcp4.OptionRouter]).To(Equal([]byte{192, 168, 2, 1}))
+ 		})
+@@ -247,7 +250,7 @@ var _ = Describe("DHCP Server", func() {
+ 				options       dhcp4.Options
+ 			)
+ 			BeforeEach(func() {
+-				options, err = prepareDHCPOptions(clientMask, routerIP, dnsIPs, routes, searchDomains, 1500, hostname, dhcpOptions)
++				options, err = prepareDHCPOptions(clientMask, routerIP, dnsIPs, routes, searchDomains, 1500, hostname, "", dhcpOptions)
+ 				Expect(err).ToNot(HaveOccurred())
+ 			})
+ 			It("should omit RouterIP Option", func() {
+diff --git a/pkg/network/driver/common.go b/pkg/network/driver/common.go
+index 9eb930d6d..7f1d09c4a 100644
+--- a/pkg/network/driver/common.go
++++ b/pkg/network/driver/common.go
+@@ -357,6 +357,7 @@ func (h *NetworkUtilsHandler) StartDHCP(nic *cache.DHCPConfig, bridgeInterfaceNa
+ 			nic.Routes,
+ 			searchDomains,
+ 			nic.Mtu,
++			nic.Subdomain,
+ 			dhcpOptions,
+ 		); err != nil {
+ 			log.Log.Errorf("failed to run DHCP: %v", err)
+diff --git a/pkg/network/setup/podnic.go b/pkg/network/setup/podnic.go
+index 95fc1bd4b..547353204 100644
+--- a/pkg/network/setup/podnic.go
++++ b/pkg/network/setup/podnic.go
+@@ -270,14 +270,16 @@ func (l *podNIC) newDHCPConfigurator() dhcpconfigurator.Configurator {
+ 			l.handler,
+ 			l.podInterfaceName,
+ 			l.vmi.Spec.Domain.Devices.Interfaces,
+-			l.vmiSpecIface)
++			l.vmiSpecIface,
++			l.vmi.Spec.Subdomain)
+ 	} else if l.vmiSpecIface.Masquerade != nil {
+ 		dhcpConfigurator = dhcpconfigurator.NewMasqueradeConfigurator(
+ 			generateInPodBridgeInterfaceName(l.podInterfaceName),
+ 			l.handler,
+ 			l.vmiSpecIface,
+ 			l.vmiSpecNetwork,
+-			l.podInterfaceName)
++			l.podInterfaceName,
++			l.vmi.Spec.Subdomain)
+ 	}
+ 	return dhcpConfigurator
+ }
+diff --git a/tests/network/BUILD.bazel b/tests/network/BUILD.bazel
+index 44fd6a8ef..40de20c5b 100644
+--- a/tests/network/BUILD.bazel
++++ b/tests/network/BUILD.bazel
+@@ -16,6 +16,7 @@ go_library(
+         "vmi_multus.go",
+         "vmi_networking.go",
+         "vmi_slirp_interface.go",
++        "vmi_subdomain.go",
+     ],
+     importpath = "kubevirt.io/kubevirt/tests/network",
+     visibility = ["//visibility:public"],
+diff --git a/tests/network/services.go b/tests/network/services.go
+index 9538daed9..8a50ce29a 100644
+--- a/tests/network/services.go
++++ b/tests/network/services.go
+@@ -190,6 +190,7 @@ var _ = SIGDescribe("[Serial]Services", func() {
+ 			})
+ 		})
+ 
++		// here
+ 		Context("with a subdomain and a headless service given", func() {
+ 			var jobCleanup func() error
+ 
+diff --git a/tests/network/vmi_networking.go b/tests/network/vmi_networking.go
+index 9136ff795..ba714f950 100644
+--- a/tests/network/vmi_networking.go
++++ b/tests/network/vmi_networking.go
+@@ -35,11 +35,13 @@ import (
+ 	v12 "k8s.io/api/core/v1"
+ 	"k8s.io/apimachinery/pkg/api/errors"
+ 	"k8s.io/apimachinery/pkg/api/resource"
++	k8smetav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+ 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+ 	v13 "k8s.io/apimachinery/pkg/apis/meta/v1"
+ 	netutils "k8s.io/utils/net"
+ 	"k8s.io/utils/pointer"
+ 
++	servicepkg "kubevirt.io/kubevirt/tests/libnet/service"
+ 	"kubevirt.io/kubevirt/tests/util"
+ 
+ 	v1 "kubevirt.io/client-go/api/v1"
+@@ -648,7 +650,7 @@ var _ = SIGDescribe("[Serial][rfe_id:694][crit:medium][vendor:cnv-qe@redhat.com]
+ 			vmi := libvmi.NewFedora(
+ 				libvmi.WithInterface(libvmi.InterfaceDeviceWithMasqueradeBinding(ports...)),
+ 				libvmi.WithNetwork(net),
+-				libvmi.WithCloudInitNoCloudNetworkData(networkData, false),
++				libvmi.WithCloudInitNoCloudNetworkData(networkData, false), // worked if i removed this (also working with it)
+ 			)
+ 
+ 			return vmi, nil
+@@ -682,6 +684,48 @@ var _ = SIGDescribe("[Serial][rfe_id:694][crit:medium][vendor:cnv-qe@redhat.com]
+ 			}
+ 		}
+ 
++		// TODO remove F
++		Context("TBD", func() {
++
++			// basicFedoraMasqueradeVmiWithSubdomain := func(subdomain string, ports []v1.Port) (*v1.VirtualMachineInstance, error) {
++			// 	net := v1.DefaultPodNetwork()
++			// 	vmi := libvmi.NewFedora(
++			// 		libvmi.WithInterface(libvmi.InterfaceDeviceWithMasqueradeBinding(ports...)),
++			// 		libvmi.WithNetwork(net),
++			// 	)
++			// 	vmi.Spec.Subdomain = subdomain
++
++			// 	return vmi, nil
++			// }
++
++			var clientVMI *v1.VirtualMachineInstance
++
++			It("TBD", func() {
++				// TODO this didnt work even with wait for GA (don't need actually)
++				// clientVMI, err = basicFedoraMasqueradeVmiWithSubdomain("testsubdomain", []v1.Port{})
++				// Expect(err).ToNot(HaveOccurred())
++				// clientVMI, err = virtClient.VirtualMachineInstance(util.NamespaceTestDefault).Create(clientVMI)
++				// Expect(err).ToNot(HaveOccurred())
++				// clientVMI = tests.WaitUntilVMIReady(clientVMI, console.LoginToFedora)
++
++				clientVMI, err = fedoraMasqueradeVMI([]v1.Port{}, api.DefaultVMCIDR)
++				Expect(err).ToNot(HaveOccurred())
++				clientVMI, err = virtClient.VirtualMachineInstance(util.NamespaceTestDefault).Create(clientVMI)
++				Expect(err).ToNot(HaveOccurred())
++				clientVMI = tests.WaitUntilVMIReady(clientVMI, console.LoginToFedora)
++				Expect(configureIpv6(clientVMI, api.DefaultVMCIDR)).To(Succeed(), "failed to configure ipv6 on client vmi")
++
++				// TODO this doesnt work ,it gives false positive (when was just name, that maybe matched with login or so)
++				Expect(console.SafeExpectBatch(clientVMI, []expect.Batcher{
++					&expect.BSnd{S: "\n"},
++					&expect.BExp{R: console.PromptExpression},
++					&expect.BSnd{S: "hostname -f\n"},
++					&expect.BExp{R: clientVMI.ObjectMeta.Name}, // adding  + "." + "testsubdomain" makes it fails
++				}, 10)).To(Succeed(), "failed to get expected hostname")
++			})
++
++		})
++
+ 		Context("[Conformance][test_id:1780][label:masquerade_binding_connectivity]should allow regular network connection", func() {
+ 
+ 			verifyClientServerConnectivity := func(clientVMI *v1.VirtualMachineInstance, serverVMI *v1.VirtualMachineInstance, tcpPort int, ipFamily k8sv1.IPFamily) error {
+@@ -770,6 +814,9 @@ var _ = SIGDescribe("[Serial][rfe_id:694][crit:medium][vendor:cnv-qe@redhat.com]
+ 
+ 				clientVMI, err = fedoraMasqueradeVMI([]v1.Port{}, networkCIDR)
+ 				Expect(err).ToNot(HaveOccurred())
++				clientVMI.Spec.Subdomain = "mysubdomain"
++				clientVMI.Labels = map[string]string{"expose": "me"} // with the one i created manually it worked
++
+ 				clientVMI, err = virtClient.VirtualMachineInstance(util.NamespaceTestDefault).Create(clientVMI)
+ 				Expect(err).ToNot(HaveOccurred())
+ 				clientVMI = tests.WaitUntilVMIReady(clientVMI, console.LoginToFedora)
+@@ -793,7 +840,29 @@ var _ = SIGDescribe("[Serial][rfe_id:694][crit:medium][vendor:cnv-qe@redhat.com]
+ 				tests.StartPythonHttpServer(serverVMI, tcpPort)
+ 
+ 				Expect(verifyClientServerConnectivity(clientVMI, serverVMI, tcpPort, k8sv1.IPv6Protocol)).To(Succeed())
++
++				const (
++					selectorLabelKey   = "expose"
++					selectorLabelValue = "me"
++					servicePort        = 22
++				)
++
++				service := servicepkg.BuildHeadlessSpec("mysubdomain", servicePort, servicePort, selectorLabelKey, selectorLabelValue)
++				_, err := virtClient.CoreV1().Services(clientVMI.Namespace).Create(context.Background(), service, k8smetav1.CreateOptions{})
++				Expect(err).ToNot(HaveOccurred())
++
++				// DEBUG remove
++				// ADD service
++				Expect(console.SafeExpectBatch(clientVMI, []expect.Batcher{
++					&expect.BSnd{S: "\n"},
++					&expect.BExp{R: console.PromptExpression},
++					&expect.BSnd{S: "hostname -f\n"},
++					//testvmi.mysubdomain.default.svc.cluster.local  the first two worked
++					&expect.BExp{R: clientVMI.Name + "." + "mysubdomain." + clientVMI.Namespace + ".svc.cluster.local"},
++					// adding  + "." + "mysubdomain" makes it fails
++				}, 10)).To(Succeed(), "failed to get expected hostname")
+ 			},
++				// TODO remove F
+ 				table.Entry("with a specific port number [IPv6]", []v1.Port{{Name: "http", Port: 8080}}, 8080, ""),
+ 				table.Entry("with a specific port used by live migration", portsUsedByLiveMigration(), LibvirtDirectMigrationPort, ""),
+ 				table.Entry("without a specific port number [IPv6]", []v1.Port{}, 8080, ""),
+@@ -1156,3 +1225,33 @@ func gatewayIPFromCIDR(cidr string) string {
+ 	ip[oct]++
+ 	return ip.String()
+ }
++
++// func buildHeadlessServiceSpec(serviceName string, exposedPort int, portToExpose int, selectorKey string, selectorValue string) *k8sv1.Service {
++// 	service := buildServiceSpec(serviceName, exposedPort, portToExpose, selectorKey, selectorValue)
++// 	service.Spec.ClusterIP = k8sv1.ClusterIPNone
++// 	return service
++// }
++
++// func buildIPv6ServiceSpec(serviceName string, exposedPort int, portToExpose int, selectorKey string, selectorValue string) *k8sv1.Service {
++// 	service := buildServiceSpec(serviceName, exposedPort, portToExpose, selectorKey, selectorValue)
++// 	ipv6Family := k8sv1.IPv6Protocol
++// 	service.Spec.IPFamilies = []k8sv1.IPFamily{ipv6Family}
++
++// 	return service
++// }
++
++// func buildServiceSpec(serviceName string, exposedPort int, portToExpose int, selectorKey string, selectorValue string) *k8sv1.Service {
++// 	return &k8sv1.Service{
++// 		ObjectMeta: k8smetav1.ObjectMeta{
++// 			Name: serviceName,
++// 		},
++// 		Spec: k8sv1.ServiceSpec{
++// 			Selector: map[string]string{
++// 				selectorKey: selectorValue,
++// 			},
++// 			Ports: []k8sv1.ServicePort{
++// 				{Protocol: k8sv1.ProtocolTCP, Port: int32(portToExpose), TargetPort: intstr.FromInt(exposedPort)},
++// 			},
++// 		},
++// 	}
++// }
+diff --git a/tests/network/vmi_subdomain.go b/tests/network/vmi_subdomain.go
+new file mode 100644
+index 000000000..a9998c1a8
+--- /dev/null
++++ b/tests/network/vmi_subdomain.go
+@@ -0,0 +1,98 @@
++/*
++ * This file is part of the kubevirt project
++ *
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at
++ *
++ *     http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ *
++ * Copyright 2021 Red Hat, Inc.
++ *
++ */
++
++package network
++
++import (
++	"context"
++	"fmt"
++
++	expect "github.com/google/goexpect"
++	. "github.com/onsi/ginkgo"
++	. "github.com/onsi/gomega"
++	k8smetav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
++
++	v1 "kubevirt.io/client-go/api/v1"
++	"kubevirt.io/client-go/kubecli"
++	"kubevirt.io/kubevirt/tests"
++	"kubevirt.io/kubevirt/tests/console"
++	servicepkg "kubevirt.io/kubevirt/tests/libnet/service"
++	"kubevirt.io/kubevirt/tests/libvmi"
++	"kubevirt.io/kubevirt/tests/util"
++)
++
++var _ = SIGDescribe("Subdomain", func() {
++	var virtClient kubecli.KubevirtClient
++
++	BeforeEach(func() {
++		var err error
++		virtClient, err = kubecli.GetKubevirtClient()
++		Expect(err).NotTo(HaveOccurred(), "Should successfully initialize an API client")
++	})
++
++	Context("masquerade binding", func() {
++		BeforeEach(func() {
++			tests.BeforeTestCleanup()
++		})
++
++		Context("with a subdomain and a headless service given", func() {
++			const (
++				subdomain          = "testsubdomain"
++				selectorLabelKey   = "expose"
++				selectorLabelValue = "this"
++				servicePort        = 22
++			)
++
++			BeforeEach(func() {
++				serviceName := subdomain
++				service := servicepkg.BuildHeadlessSpec(serviceName, servicePort, servicePort, selectorLabelKey, selectorLabelValue)
++				_, err := virtClient.CoreV1().Services(util.NamespaceTestDefault).Create(context.Background(), service, k8smetav1.CreateOptions{})
++				Expect(err).ToNot(HaveOccurred())
++			})
++
++			fedoraMasqueradeVMI := func() (*v1.VirtualMachineInstance, error) {
++				net := v1.DefaultPodNetwork()
++				vmi := libvmi.NewFedora(
++					libvmi.WithInterface(libvmi.InterfaceDeviceWithMasqueradeBinding([]v1.Port{}...)),
++					libvmi.WithNetwork(net),
++				)
++
++				return vmi, nil
++			}
++
++			It("VMI at the subdomain should have the expected FQDN", func() {
++				clientVMI, err := fedoraMasqueradeVMI()
++				Expect(err).ToNot(HaveOccurred())
++				clientVMI.Spec.Subdomain = subdomain
++				clientVMI.Labels = map[string]string{selectorLabelKey: selectorLabelValue}
++
++				clientVMI, err = virtClient.VirtualMachineInstance(util.NamespaceTestDefault).Create(clientVMI)
++				Expect(err).ToNot(HaveOccurred())
++				clientVMI = tests.WaitUntilVMIReady(clientVMI, console.LoginToFedora)
++
++				Expect(console.SafeExpectBatch(clientVMI, []expect.Batcher{
++					&expect.BSnd{S: "\n"},
++					&expect.BExp{R: console.PromptExpression},
++					&expect.BSnd{S: "hostname -f\n"},
++					&expect.BExp{R: fmt.Sprintf("%s.%s.%s.svc.cluster.local", clientVMI.Name, subdomain, clientVMI.Namespace)},
++				}, 10)).To(Succeed(), "failed to get expected FQDN")
++			})
++		})
++	})
++})
+-- 
+2.24.1
+

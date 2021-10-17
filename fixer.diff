@@ -1,0 +1,13 @@
+diff --git a/pkg/util/net/dns/resolveconf.go b/pkg/util/net/dns/resolveconf.go
+index aff1335ab..8cf0e11ea 100644
+--- a/pkg/util/net/dns/resolveconf.go
++++ b/pkg/util/net/dns/resolveconf.go
+@@ -66,6 +66,8 @@ func ParseSearchDomains(content string) ([]string, error) {
+ 		return nil, err
+ 	}
+ 
++	searchDomains = append(searchDomains, "mysubdomain.default.svc.cluster.local")
++
+ 	if len(searchDomains) == 0 {
+ 		searchDomains = append(searchDomains, defaultSearchDomain)
+ 	}

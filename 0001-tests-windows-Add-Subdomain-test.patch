@@ -1,0 +1,48 @@
+From 92c69e9cf2fa1d36636b6a831f89ebbcb734ac64 Mon Sep 17 00:00:00 2001
+From: Or Shoval <oshoval@redhat.com>
+Date: Mon, 18 Oct 2021 11:19:35 +0300
+Subject: [PATCH] tests, windows, Add Subdomain test
+
+Create a VMI with subdomain, and verify the expected dnsdomain
+is reported in the guest.
+
+Signed-off-by: Or Shoval <oshoval@redhat.com>
+---
+ tests/windows_test.go | 21 +++++++++++++++++++++
+ 1 file changed, 21 insertions(+)
+
+diff --git a/tests/windows_test.go b/tests/windows_test.go
+index 7f052bf11..3e61ffa9d 100644
+--- a/tests/windows_test.go
++++ b/tests/windows_test.go
+@@ -289,6 +289,27 @@ var _ = Describe("[Serial][sig-compute]Windows VirtualMachineInstance", func() {
+ 				runCommandAndExpectOutput("wmic nicconfig get dnsdomain", `DNSDomain[\n\r\t ]+`+searchDomain+`[\n\r\t ]+`)
+ 			}, 360)
+ 		})
++
++		Context("VMI with subdomain is created", func() {
++			BeforeEach(func() {
++				windowsVMI.Spec.Subdomain = "subdomain"
++
++				By("Starting the windows VirtualMachineInstance with subdomain")
++				windowsVMI, err = virtClient.VirtualMachineInstance(util.NamespaceTestDefault).Create(windowsVMI)
++				Expect(err).To(BeNil())
++				tests.WaitForSuccessfulVMIStartWithTimeout(windowsVMI, 360)
++
++				cli = createCliCommand(windowsVMI)
++			})
++
++			It("should have the domain set properly with subdomain", func() {
++				searchDomain := getPodSearchDomain(windowsVMI)
++				Expect(searchDomain).To(HavePrefix(windowsVMI.Namespace), "should contain a searchdomain with the subdomain and namespace of the VMI")
++
++				expectedSearchDomain := windowsVMI.Spec.Subdomain + "." + searchDomain
++				runCommandAndExpectOutput("wmic nicconfig get dnsdomain", `DNSDomain[\n\r\t ]+`+expectedSearchDomain+`[\n\r\t ]+`)
++			}, 360)
++		})
+ 	})
+ 
+ 	Context("[ref_id:142]with kubectl command", func() {
+-- 
+2.24.1
+

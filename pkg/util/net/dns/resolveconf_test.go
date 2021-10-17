@@ -91,4 +91,52 @@ var _ = Describe("Resolveconf", func() {
 			Expect(domain).To(Equal("14wg5xngig6vzfqjww4kocnky3c9dqjpwkewzlwpf.com"))
 		})
 	})
+
+	Context("subdomain", func() {
+		It("should be added to the search domain entries", func() {
+			searchDomains := []string{"default.svc.cluster.local", "svc.cluster.local", "cluster.local"}
+
+			subdomain := "subdomain"
+			subdomainSearchDomain := SubdomainSearchDomain(searchDomains, subdomain)
+			if subdomainSearchDomain != "" {
+				searchDomains = append(searchDomains, subdomainSearchDomain)
+			}
+
+			Expect(searchDomains).To(Equal([]string{subdomain + ".default.svc.cluster.local",
+				"default.svc.cluster.local", "svc.cluster.local", "cluster.local"}))
+		})
+
+		It("should not add subdomain search domain if subdomain is empty", func() {
+			searchDomains := []string{"default.svc.cluster.local", "svc.cluster.local", "cluster.local"}
+
+			subdomain := ""
+			subdomainSearchDomain := SubdomainSearchDomain(searchDomains, subdomain)
+			if subdomainSearchDomain != "" {
+				searchDomains = append(searchDomains, subdomainSearchDomain)
+			}
+			Expect(searchDomains).To(Equal([]string{"default.svc.cluster.local", "svc.cluster.local", "cluster.local"}))
+		})
+
+		It("should not add subdomain search domain if no expected search domain was found", func() {
+			searchDomains := []string{"svc.cluster.local", "cluster.local"}
+
+			subdomain := "subdomain"
+			subdomainSearchDomain := SubdomainSearchDomain(searchDomains, subdomain)
+			if subdomainSearchDomain != "" {
+				searchDomains = append(searchDomains, subdomainSearchDomain)
+			}
+			Expect(searchDomains).To(Equal([]string{"svc.cluster.local", "cluster.local"}))
+		})
+
+		It("should add subdomain search domain even if the longest valid existing search domain isn't the first", func() {
+			searchDomains := []string{"svc.cluster.local", "cluster.local", "default.svc.cluster.local"}
+
+			subdomain := "subdomain"
+			subdomainSearchDomain := SubdomainSearchDomain(searchDomains, subdomain)
+			if subdomainSearchDomain != "" {
+				searchDomains = append(searchDomains, subdomainSearchDomain)
+			}
+			Expect(searchDomains).To(Equal([]string{subdomain + ".default.svc.cluster.local", "svc.cluster.local", "cluster.local", "default.svc.cluster.local"}))
+		})
+	})
 })

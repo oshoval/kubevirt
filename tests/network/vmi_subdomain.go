@@ -79,13 +79,20 @@ var _ = SIGDescribe("Subdomain", func() {
 		}
 
 		type vmiFuncPtr func() *v1.VirtualMachineInstance
-		table.DescribeTable("VMI of the subdomain should have the expected FQDN", func(f vmiFuncPtr) {
+		table.DescribeTable("VMI should have the expected FQDN", func(f vmiFuncPtr, subdom string) {
 			vmi := f()
-			vmi.Spec.Subdomain = subdomain
+			vmi.Namespace = util.NamespaceTestDefault
+			var expectedFQDN string
+			if subdom != "" {
+				vmi.Spec.Subdomain = subdom
+				expectedFQDN = fmt.Sprintf("%s.%s.%s.svc.cluster.local", vmi.Name, subdom, vmi.Namespace)
+			} else {
+				expectedFQDN = vmi.Name
+			}
 			vmi.Labels = map[string]string{selectorLabelKey: selectorLabelValue}
 
 			var err error
-			vmi, err = virtClient.VirtualMachineInstance(util.NamespaceTestDefault).Create(vmi)
+			vmi, err = virtClient.VirtualMachineInstance(vmi.Namespace).Create(vmi)
 			Expect(err).ToNot(HaveOccurred())
 			vmi = tests.WaitUntilVMIReady(vmi, console.LoginToFedora)
 
@@ -93,11 +100,13 @@ var _ = SIGDescribe("Subdomain", func() {
 				&expect.BSnd{S: "\n"},
 				&expect.BExp{R: console.PromptExpression},
 				&expect.BSnd{S: "hostname -f\n"},
-				&expect.BExp{R: fmt.Sprintf("%s.%s.%s.svc.cluster.local", vmi.Name, subdomain, vmi.Namespace)},
+				&expect.BExp{R: expectedFQDN},
 			}, 10)).To(Succeed(), "failed to get expected FQDN")
 		},
-			table.Entry("with Masquerade binding", fedoraMasqueradeVMI),
-			table.Entry("with Bridge binding", fedoraBridgeBindingVMI),
+			table.Entry("with Masquerade binding and subdomain", fedoraMasqueradeVMI, subdomain),
+			table.Entry("with Bridge binding and subdomain", fedoraBridgeBindingVMI, subdomain),
+			table.Entry("with Masquerade binding without subdomain", fedoraMasqueradeVMI, ""),
+			table.Entry("with Bridge binding without subdomain", fedoraBridgeBindingVMI, ""),
 		)
 	})
 })

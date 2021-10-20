@@ -132,22 +132,23 @@ var _ = Describe("[Serial][sig-compute]Windows VirtualMachineInstance", func() {
 		windowsVMI.Spec = getWindowsVMISpec()
 		tests.AddExplicitPodNetworkInterface(windowsVMI)
 		windowsVMI.Spec.Domain.Devices.Interfaces[0].Model = "e1000"
+		windowsVMI.Namespace = util.NamespaceTestDefault
 	})
 
 	It("[test_id:487]should succeed to start a vmi", func() {
-		vmi, err := virtClient.VirtualMachineInstance(util.NamespaceTestDefault).Create(windowsVMI)
+		vmi, err := virtClient.VirtualMachineInstance(windowsVMI.Namespace).Create(windowsVMI)
 		Expect(err).To(BeNil())
 		tests.WaitForSuccessfulVMIStartWithTimeout(vmi, 360)
 	}, 300)
 
 	It("[test_id:488]should succeed to stop a running vmi", func() {
 		By("Starting the vmi")
-		vmi, err := virtClient.VirtualMachineInstance(util.NamespaceTestDefault).Create(windowsVMI)
+		vmi, err := virtClient.VirtualMachineInstance(windowsVMI.Namespace).Create(windowsVMI)
 		Expect(err).To(BeNil())
 		tests.WaitForSuccessfulVMIStartWithTimeout(vmi, 360)
 
 		By("Stopping the vmi")
-		err = virtClient.VirtualMachineInstance(util.NamespaceTestDefault).Delete(vmi.Name, &metav1.DeleteOptions{})
+		err = virtClient.VirtualMachineInstance(vmi.Namespace).Delete(vmi.Name, &metav1.DeleteOptions{})
 		Expect(err).To(BeNil())
 	}, 300)
 
@@ -179,7 +180,7 @@ var _ = Describe("[Serial][sig-compute]Windows VirtualMachineInstance", func() {
 
 			BeforeEach(func() {
 				By("Starting the windows VirtualMachineInstance")
-				windowsVMI, err = virtClient.VirtualMachineInstance(util.NamespaceTestDefault).Create(windowsVMI)
+				windowsVMI, err = virtClient.VirtualMachineInstance(windowsVMI.Namespace).Create(windowsVMI)
 				Expect(err).To(BeNil())
 				tests.WaitForSuccessfulVMIStartWithTimeout(windowsVMI, 360)
 
@@ -287,7 +288,7 @@ var _ = Describe("[Serial][sig-compute]Windows VirtualMachineInstance", func() {
 
 func winrnLoginCommand(virtClient kubecli.KubevirtClient, windowsVMI *v1.VirtualMachineInstance) []string {
 	var err error
-	windowsVMI, err = virtClient.VirtualMachineInstance(util.NamespaceTestDefault).Get(windowsVMI.Name, &metav1.GetOptions{})
+	windowsVMI, err = virtClient.VirtualMachineInstance(windowsVMI.Namespace).Get(windowsVMI.Name, &metav1.GetOptions{})
 	Expect(err).ToNot(HaveOccurred())
 
 	vmiIp := windowsVMI.Status.Interfaces[0].IP

@@ -45,6 +45,7 @@ import (
 
 	"kubevirt.io/kubevirt/tests/util"
 
+	netvmispec "kubevirt.io/kubevirt/pkg/network/vmispec"
 	virtconfig "kubevirt.io/kubevirt/pkg/virt-config"
 	"kubevirt.io/kubevirt/pkg/virt-launcher/virtwrap/api"
 
@@ -1029,6 +1030,8 @@ var _ = Describe("[Serial]SRIOV", func() {
 				Expect(checkMacAddress(vmi, interfaceName, mac)).To(Succeed())
 				By("checking virtual machine instance reports the expected network name")
 				Expect(getInterfaceNetworkNameByMAC(vmi, mac)).To(Equal(sriovnet1))
+				By("checking virtual machine instance reports the expected info source")
+				Expect(getInterfaceInfoSourceByMAC(vmi, mac)).To(Equal(netvmispec.InfoSourceGuestAgent))
 			})
 
 			Context("migration", func() {
@@ -1544,6 +1547,16 @@ func getInterfaceNetworkNameByMAC(vmi *v1.VirtualMachineInstance, macAddress str
 	for _, iface := range vmi.Status.Interfaces {
 		if iface.MAC == macAddress {
 			return iface.Name
+		}
+	}
+
+	return ""
+}
+
+func getInterfaceInfoSourceByMAC(vmi *v1.VirtualMachineInstance, macAddress string) string {
+	for _, iface := range vmi.Status.Interfaces {
+		if iface.MAC == macAddress {
+			return iface.InfoSource
 		}
 	}
 

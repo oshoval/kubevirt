@@ -955,6 +955,7 @@ func (d *VirtualMachineController) updateInterfacesFromDomain(vmi *v1.VirtualMac
 			// Remove the interface from domainInterfaceStatusByMac to mark it as handled
 			if interfaceStatus, exists := domainInterfaceStatusByMac[interfaceMAC]; exists {
 				newInterface.InterfaceName = interfaceStatus.InterfaceName
+				newInterface.InfoSource = interfaceStatus.InfoSource
 				// Do not update if interface has Masquerede binding
 				// virt-controller should update VMI status interface with Pod IP instead
 				if !isForwardingBindingInterface {
@@ -962,7 +963,10 @@ func (d *VirtualMachineController) updateInterfacesFromDomain(vmi *v1.VirtualMac
 					newInterface.IPs = interfaceStatus.IPs
 				}
 				delete(domainInterfaceStatusByMac, interfaceMAC)
+			} else {
+				newInterface.InfoSource = netvmispec.InfoSourceDomain
 			}
+
 			newInterfaces = append(newInterfaces, newInterface)
 		}
 
@@ -977,6 +981,7 @@ func (d *VirtualMachineController) updateInterfacesFromDomain(vmi *v1.VirtualMac
 				IP:            domainInterfaceStatus.Ip,
 				IPs:           domainInterfaceStatus.IPs,
 				InterfaceName: domainInterfaceStatus.InterfaceName,
+				InfoSource:    domainInterfaceStatus.InfoSource,
 			}
 			newInterfaces = append(newInterfaces, newInterface)
 		}

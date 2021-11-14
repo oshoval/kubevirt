@@ -23,6 +23,12 @@ import (
 	v1 "kubevirt.io/api/core/v1"
 )
 
+const (
+	InfoSourceDomain      string = "domain"
+	InfoSourceGuestAgent  string = "guest-agent"
+	InfoSourceDomainAndGA string = InfoSourceDomain + ", " + InfoSourceGuestAgent
+)
+
 func FilterSRIOVInterfaces(ifaces []v1.Interface) []v1.Interface {
 	var sriovIfaces []v1.Interface
 	for _, iface := range ifaces {

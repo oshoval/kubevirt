@@ -29,6 +29,7 @@ import (
 
 	v1 "kubevirt.io/api/core/v1"
 	"kubevirt.io/kubevirt/pkg/network/cache"
+	netvmispec "kubevirt.io/kubevirt/pkg/network/vmispec"
 	"kubevirt.io/kubevirt/pkg/virt-launcher/virtwrap/api"
 )
 
@@ -168,6 +169,7 @@ func (c *NetStat) UpdateStatus(vmi *v1.VirtualMachineInstance, domain *api.Domai
 			// Remove the interface from domainInterfaceStatusByMac to mark it as handled
 			if interfaceStatus, exists := domainInterfaceStatusByMac[interfaceMAC]; exists {
 				newInterface.InterfaceName = interfaceStatus.InterfaceName
+				newInterface.InfoSource = interfaceStatus.InfoSource
 				// Do not update if interface has Masquerede binding
 				// virt-controller should update VMI status interface with Pod IP instead
 				if !isForwardingBindingInterface {
@@ -175,7 +177,10 @@ func (c *NetStat) UpdateStatus(vmi *v1.VirtualMachineInstance, domain *api.Domai
 					newInterface.IPs = interfaceStatus.IPs
 				}
 				delete(domainInterfaceStatusByMac, interfaceMAC)
+			} else {
+				newInterface.InfoSource = netvmispec.InfoSourceDomain
 			}
+
 			newInterfaces = append(newInterfaces, newInterface)
 		}
 
@@ -190,6 +195,7 @@ func (c *NetStat) UpdateStatus(vmi *v1.VirtualMachineInstance, domain *api.Domai
 				IP:            domainInterfaceStatus.Ip,
 				IPs:           domainInterfaceStatus.IPs,
 				InterfaceName: domainInterfaceStatus.InterfaceName,
+				InfoSource:    domainInterfaceStatus.InfoSource,
 			}
 			newInterfaces = append(newInterfaces, newInterface)
 		}

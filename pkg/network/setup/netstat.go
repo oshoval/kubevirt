@@ -76,23 +76,19 @@ func (c *NetStat) UpdateStatus(vmi *v1.VirtualMachineInstance, domain *api.Domai
 		}
 	}
 
-	if len(vmi.Status.Interfaces) == 0 {
-		// Set Pod Interface
-		interfaces := make([]v1.VirtualMachineInstanceNetworkInterface, 0)
-		for _, network := range vmi.Spec.Networks {
-			podIface, err := c.getPodInterfacefromFileCache(vmi, network.Name)
-			if err != nil {
-				return err
-			}
-
-			ifc := v1.VirtualMachineInstanceNetworkInterface{
-				Name: network.Name,
-				IP:   podIface.PodIP,
-				IPs:  podIface.PodIPs,
-			}
-			interfaces = append(interfaces, ifc)
+	vmi.Status.Interfaces = []v1.VirtualMachineInstanceNetworkInterface{}
+	for _, network := range vmi.Spec.Networks {
+		podIface, err := c.getPodInterfacefromFileCache(vmi, network.Name)
+		if err != nil {
+			return err
 		}
-		vmi.Status.Interfaces = interfaces
+
+		ifc := v1.VirtualMachineInstanceNetworkInterface{
+			Name: network.Name,
+			IP:   podIface.PodIP,
+			IPs:  podIface.PodIPs,
+		}
+		vmi.Status.Interfaces = append(vmi.Status.Interfaces, ifc)
 	}
 
 	if len(domain.Spec.Devices.Interfaces) > 0 || len(domain.Status.Interfaces) > 0 {

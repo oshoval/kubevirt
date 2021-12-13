@@ -25,8 +25,6 @@ import (
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
 	v1 "kubevirt.io/api/core/v1"
 	"kubevirt.io/kubevirt/pkg/network/cache"
 	netsetup "kubevirt.io/kubevirt/pkg/network/setup"
@@ -34,22 +32,14 @@ import (
 )
 
 var _ = Describe("netstat", func() {
-	const (
-		iface0 = "iface0"
-		iface1 = "iface1"
-	)
-
-	var netStat *netsetup.NetStat
-	var vmi *v1.VirtualMachineInstance
+	var setup testSetup
 
 	BeforeEach(func() {
-		netStat = netsetup.NewNetStat(&interfaceCacheFactoryStatusStub{})
-
-		vmi = &v1.VirtualMachineInstance{ObjectMeta: metav1.ObjectMeta{UID: "123"}}
+		setup = newTestSetup()
 	})
 
 	It("run status with no domain", func() {
-		Expect(netStat.UpdateStatus(vmi, nil)).To(Succeed())
+		Expect(setup.NetStat.UpdateStatus(setup.Vmi, nil)).To(Succeed())
 	})
 
 	Context("with volatile cache", func() {
@@ -57,82 +47,75 @@ var _ = Describe("netstat", func() {
 			primaryNetworkName = "primary"
 			primaryPodIPv4     = "1.1.1.1"
 			primaryPodIPv6     = "fd10:244::8c4c"
+			primaryGaIPv4      = "2.2.2.1"
+			primaryGaIPv6      = "fd20:244::8c4c"
+			primaryMAC         = "1C:CE:C0:01:BE:E7"
 
 			secondaryNetworkName = "secondary"
 			secondaryPodIPv4     = "1.1.1.2"
 			secondaryPodIPv6     = "fd10:244::8c4e"
+			secondaryGaIPv4      = "2.2.2.2"
+			secondaryGaIPv6      = "fd20:244::8c4e"
+			secondaryMAC         = "1C:CE:C0:01:BE:E9"
 		)
 
 		BeforeEach(func() {
-			vmi.Spec.Networks = []v1.Network{
-				{
-					Name:          primaryNetworkName,
-					NetworkSource: v1.NetworkSource{Pod: &v1.PodNetwork{}},
-				},
-				{
-					Name: secondaryNetworkName,
-					NetworkSource: v1.NetworkSource{
-						Multus: &v1.MultusNetwork{
-							NetworkName: "test.network",
-						},
-					},
-				},
-			}
-
-			podCacheInterface := makePodCacheInterface(primaryNetworkName, primaryPodIPv4, primaryPodIPv6)
-			netStat.CachePodInterfaceVolatileData(vmi, primaryNetworkName, podCacheInterface)
-
-			podCacheSecondaryInterface := makePodCacheInterface(secondaryNetworkName, secondaryPodIPv4, secondaryPodIPv6)
-			netStat.CachePodInterfaceVolatileData(vmi, secondaryNetworkName, podCacheSecondaryInterface)
+			setup = newTestSetupWithVolatileCache()
 		})
 
 		It("run status and expect two interfaces/networks to be reported (without guest-agent)", func() {
-			netStat.UpdateStatus(vmi, &api.Domain{})
+			setup.addNetworkInterface(
+				newVMISpecIfaceWithBridgeBinding(primaryNetworkName),
+				newVMISpecPodNetwork(primaryNetworkName),
+				newDomainSpecIface(primaryNetworkName, ""),
+				primaryPodIPv4, primaryPodIPv6,
+			)
+			setup.addNetworkInterface(
+				newVMISpecIfaceWithBridgeBinding(secondaryNetworkName),
+				newVMISpecMultusNetwork(secondaryNetworkName),
+				newDomainSpecIface(secondaryNetworkName, ""),
+				secondaryPodIPv4, secondaryPodIPv6,
+			)
 
-			Expect(vmi.Status.Interfaces).To(Equal([]v1.VirtualMachineInstanceNetworkInterface{
+			setup.NetStat.UpdateStatus(setup.Vmi, setup.Domain)
+
+			Expect(setup.Vmi.Status.Interfaces).To(Equal([]v1.VirtualMachineInstanceNetworkInterface{
 				newVMIStatusIface(primaryNetworkName, []string{primaryPodIPv4, primaryPodIPv6}, "", ""),
 				newVMIStatusIface(secondaryNetworkName, []string{secondaryPodIPv4, secondaryPodIPv6}, "", ""),
 			}), "the pod IP/s should be reported in the status")
 
-			Expect(netStat.PodInterfaceVolatileDataIsCached(vmi, primaryNetworkName)).To(BeTrue())
-			Expect(netStat.PodInterfaceVolatileDataIsCached(vmi, secondaryNetworkName)).To(BeTrue())
+			Expect(setup.NetStat.PodInterfaceVolatileDataIsCached(setup.Vmi, primaryNetworkName)).To(BeTrue())
+			Expect(setup.NetStat.PodInterfaceVolatileDataIsCached(setup.Vmi, secondaryNetworkName)).To(BeTrue())
 		})
 
 		It("run status and expect 2 interfaces to be reported based on guest-agent data", func() {
-			// Guest data collected by the guest-agent
-			const (
-				primaryGaIPv4 = "2.2.2.1"
-				primaryGaIPv6 = "fd20:244::8c4c"
-
-				secondaryGaIPv4 = "2.2.2.2"
-				secondaryGaIPv6 = "fd20:244::8c4e"
-
-				primaryMAC   = "1C:CE:C0:01:BE:E7"
-				secondaryMAC = "1C:CE:C0:01:BE:E9"
+			setup.addNetworkInterface(
+				newVMISpecIfaceWithBridgeBinding(primaryNetworkName),
+				newVMISpecPodNetwork(primaryNetworkName),
+				newDomainSpecIface(primaryNetworkName, primaryMAC),
+				primaryPodIPv4, primaryPodIPv6,
+			)
+			setup.addNetworkInterface(
+				newVMISpecIfaceWithBridgeBinding(secondaryNetworkName),
+				newVMISpecMultusNetwork(secondaryNetworkName),
+				newDomainSpecIface(secondaryNetworkName, secondaryMAC),
+				secondaryPodIPv4, secondaryPodIPv6,
 			)
 
-			// Guest agent data is collected and placed in the DomainStatus.
-			// During status update, this data is overriding the one from the domain spec and cache.
-			domain := &api.Domain{
-				Spec: api.DomainSpec{Devices: api.Devices{Interfaces: []api.Interface{
-					newDomainSpecIface(primaryNetworkName, primaryMAC),
-					newDomainSpecIface(secondaryNetworkName, secondaryMAC),
-				}}},
-				Status: api.DomainStatus{Interfaces: []api.InterfaceStatus{
-					newDomainStatusIface(primaryNetworkName, []string{primaryGaIPv4, primaryGaIPv6}, primaryMAC),
-					newDomainStatusIface(secondaryNetworkName, []string{secondaryGaIPv4, secondaryGaIPv6}, secondaryMAC),
-				}},
-			}
+			setup.addGuestAgentInterfaces(
+				newDomainStatusIface(primaryNetworkName, []string{primaryGaIPv4, primaryGaIPv6}, primaryMAC, ""),
+				newDomainStatusIface(secondaryNetworkName, []string{secondaryGaIPv4, secondaryGaIPv6}, secondaryMAC, ""),
+			)
 
-			netStat.UpdateStatus(vmi, domain)
+			setup.NetStat.UpdateStatus(setup.Vmi, setup.Domain)
 
-			Expect(vmi.Status.Interfaces).To(Equal([]v1.VirtualMachineInstanceNetworkInterface{
+			Expect(setup.Vmi.Status.Interfaces).To(Equal([]v1.VirtualMachineInstanceNetworkInterface{
 				newVMIStatusIface(primaryNetworkName, []string{primaryGaIPv4, primaryGaIPv6}, primaryMAC, ""),
 				newVMIStatusIface(secondaryNetworkName, []string{secondaryGaIPv4, secondaryGaIPv6}, secondaryMAC, ""),
 			}), "the guest-agent IP/s should be reported in the status")
 
-			Expect(netStat.PodInterfaceVolatileDataIsCached(vmi, primaryNetworkName)).To(BeTrue())
-			Expect(netStat.PodInterfaceVolatileDataIsCached(vmi, secondaryNetworkName)).To(BeTrue())
+			Expect(setup.NetStat.PodInterfaceVolatileDataIsCached(setup.Vmi, primaryNetworkName)).To(BeTrue())
+			Expect(setup.NetStat.PodInterfaceVolatileDataIsCached(setup.Vmi, secondaryNetworkName)).To(BeTrue())
 		})
 
 		It("run status and expect an interfaces (with masquerade) to be reported based on pod & guest-agent data", func() {
@@ -144,26 +127,23 @@ var _ = Describe("netstat", func() {
 				primaryMAC = "1C:CE:C0:01:BE:E7"
 			)
 
-			// Guest agent data is collected and placed in the DomainStatus.
-			// During status update, this data is overriding the one from the domain spec and cache.
-			domain := &api.Domain{
-				Spec: api.DomainSpec{Devices: api.Devices{Interfaces: []api.Interface{
-					newDomainSpecIface(primaryNetworkName, primaryMAC),
-				}}},
-				Status: api.DomainStatus{Interfaces: []api.InterfaceStatus{
-					newDomainStatusIface(primaryNetworkName, []string{primaryGaIPv4, primaryGaIPv6}, primaryMAC),
-				}},
-			}
+			setup.addNetworkInterface(
+				newVMISpecIfaceWithMasqueradeBinding(primaryNetworkName),
+				newVMISpecPodNetwork(primaryNetworkName),
+				newDomainSpecIface(primaryNetworkName, primaryMAC),
+				primaryPodIPv4, primaryPodIPv6,
+			)
+			setup.addGuestAgentInterfaces(
+				newDomainStatusIface(primaryNetworkName, []string{primaryGaIPv4, primaryGaIPv6}, primaryMAC, "eth0"),
+			)
 
-			vmi.Spec.Domain.Devices.Interfaces = []v1.Interface{newVMISpecIfaceWithMasqueradeBinding(primaryNetworkName)}
+			setup.NetStat.UpdateStatus(setup.Vmi, setup.Domain)
 
-			netStat.UpdateStatus(vmi, domain)
-
-			Expect(vmi.Status.Interfaces).To(Equal([]v1.VirtualMachineInstanceNetworkInterface{
-				newVMIStatusIface(primaryNetworkName, []string{primaryPodIPv4, primaryPodIPv6}, primaryMAC, ""),
+			Expect(setup.Vmi.Status.Interfaces).To(Equal([]v1.VirtualMachineInstanceNetworkInterface{
+				newVMIStatusIface(primaryNetworkName, []string{primaryPodIPv4, primaryPodIPv6}, primaryMAC, "eth0"),
 			}), "the pod IP/s should be reported in the status")
 
-			Expect(netStat.PodInterfaceVolatileDataIsCached(vmi, primaryNetworkName)).To(BeTrue())
+			Expect(setup.NetStat.PodInterfaceVolatileDataIsCached(setup.Vmi, primaryNetworkName)).To(BeTrue())
 		})
 
 		It("should update existing interface status with MAC from the domain", func() {
@@ -172,7 +152,14 @@ var _ = Describe("netstat", func() {
 				newDomainMAC = "1C:CE:C0:01:BE:E7"
 			)
 
-			vmi.Status.Interfaces = []v1.VirtualMachineInstanceNetworkInterface{
+			setup.addNetworkInterface(
+				newVMISpecIfaceWithBridgeBinding(primaryNetworkName),
+				newVMISpecPodNetwork(primaryNetworkName),
+				newDomainSpecIface(primaryNetworkName, newDomainMAC),
+				primaryPodIPv4, primaryPodIPv6,
+			)
+
+			setup.Vmi.Status.Interfaces = []v1.VirtualMachineInstanceNetworkInterface{
 				{
 					IP:   primaryPodIPv4,
 					IPs:  []string{primaryPodIPv4, primaryPodIPv6},
@@ -181,29 +168,32 @@ var _ = Describe("netstat", func() {
 				},
 			}
 
-			domain := &api.Domain{
-				Spec: api.DomainSpec{Devices: api.Devices{Interfaces: []api.Interface{
-					newDomainSpecIface(primaryNetworkName, newDomainMAC),
-				}}},
-			}
+			setup.NetStat.UpdateStatus(setup.Vmi, setup.Domain)
 
-			netStat.UpdateStatus(vmi, domain)
-
-			Expect(vmi.Status.Interfaces).To(Equal([]v1.VirtualMachineInstanceNetworkInterface{
+			Expect(setup.Vmi.Status.Interfaces).To(Equal([]v1.VirtualMachineInstanceNetworkInterface{
 				newVMIStatusIface(primaryNetworkName, []string{primaryPodIPv4, primaryPodIPv6}, newDomainMAC, ""),
 			}), "the pod IP/s should be reported in the status")
 		})
-	})
 
-	It("runs teardown that clears volatile cache", func() {
-		data := &cache.PodCacheInterface{}
-		netStat.CachePodInterfaceVolatileData(vmi, iface0, data)
-		netStat.CachePodInterfaceVolatileData(vmi, iface1, data)
+		It("runs teardown that clears volatile cache", func() {
+			setup.addNetworkInterface(
+				newVMISpecIfaceWithBridgeBinding(primaryNetworkName),
+				newVMISpecPodNetwork(primaryNetworkName),
+				newDomainSpecIface(primaryNetworkName, ""),
+				primaryPodIPv4, primaryPodIPv6,
+			)
+			setup.addNetworkInterface(
+				newVMISpecIfaceWithBridgeBinding(secondaryNetworkName),
+				newVMISpecMultusNetwork(secondaryNetworkName),
+				newDomainSpecIface(secondaryNetworkName, ""),
+				secondaryPodIPv4, secondaryPodIPv6,
+			)
 
-		netStat.Teardown(vmi)
+			setup.NetStat.Teardown(setup.Vmi)
 
-		Expect(netStat.PodInterfaceVolatileDataIsCached(vmi, iface0)).To(BeFalse())
-		Expect(netStat.PodInterfaceVolatileDataIsCached(vmi, iface1)).To(BeFalse())
+			Expect(setup.NetStat.PodInterfaceVolatileDataIsCached(setup.Vmi, primaryNetworkName)).To(BeFalse())
+			Expect(setup.NetStat.PodInterfaceVolatileDataIsCached(setup.Vmi, secondaryNetworkName)).To(BeFalse())
+		})
 	})
 
 	It("should update existing interface status with IP from the guest-agent", func() {
@@ -218,7 +208,13 @@ var _ = Describe("netstat", func() {
 			newGaIPv6 = "fd20:2222::2222"
 		)
 
-		vmi.Status.Interfaces = []v1.VirtualMachineInstanceNetworkInterface{
+		setup.addNetworkInterface(
+			newVMISpecIfaceWithBridgeBinding(primaryNetworkName),
+			newVMISpecPodNetwork(primaryNetworkName),
+			newDomainSpecIface(primaryNetworkName, origMAC),
+			origIPv4, origIPv6,
+		)
+		setup.Vmi.Status.Interfaces = []v1.VirtualMachineInstanceNetworkInterface{
 			{
 				IP:   origIPv4,
 				IPs:  []string{origIPv4, origIPv6},
@@ -227,18 +223,13 @@ var _ = Describe("netstat", func() {
 			},
 		}
 
-		domain := &api.Domain{
-			Spec: api.DomainSpec{Devices: api.Devices{Interfaces: []api.Interface{
-				newDomainSpecIface(primaryNetworkName, origMAC),
-			}}},
-			Status: api.DomainStatus{Interfaces: []api.InterfaceStatus{
-				newDomainStatusIface(primaryNetworkName, []string{newGaIPv4, newGaIPv6}, origMAC),
-			}},
-		}
+		setup.addGuestAgentInterfaces(
+			newDomainStatusIface(primaryNetworkName, []string{newGaIPv4, newGaIPv6}, origMAC, ""),
+		)
 
-		netStat.UpdateStatus(vmi, domain)
+		setup.NetStat.UpdateStatus(setup.Vmi, setup.Domain)
 
-		Expect(vmi.Status.Interfaces).To(Equal([]v1.VirtualMachineInstanceNetworkInterface{
+		Expect(setup.Vmi.Status.Interfaces).To(Equal([]v1.VirtualMachineInstanceNetworkInterface{
 			newVMIStatusIface(primaryNetworkName, []string{newGaIPv4, newGaIPv6}, origMAC, ""),
 		}), "the pod IP/s should be reported in the status")
 	})
@@ -246,32 +237,23 @@ var _ = Describe("netstat", func() {
 	It("should report SR-IOV interface with MAC and network name, based on VMI spec and guest-agent data", func() {
 		const (
 			networkName    = "sriov-network"
-			NADName        = "sriov-nad"
 			ifaceMAC       = "C0:01:BE:E7:15:G0:0D"
 			guestIfaceName = "eth1"
 		)
 
-		vmi.Spec.Domain.Devices.Interfaces = []v1.Interface{
-			{
-				Name:                   networkName,
-				InterfaceBindingMethod: v1.InterfaceBindingMethod{SRIOV: &v1.InterfaceSRIOV{}},
-				MacAddress:             ifaceMAC,
-			},
-		}
+		sriovIface := newVMISpecIfaceWithSRIOVBinding(networkName)
+		sriovIface.MacAddress = ifaceMAC
+		setup.addSRIOVNetworkInterface(
+			sriovIface,
+			newVMISpecMultusNetwork(networkName),
+		)
+		setup.addGuestAgentInterfaces(
+			newDomainStatusIface("", nil, ifaceMAC, guestIfaceName),
+		)
 
-		vmi.Spec.Networks = []v1.Network{
-			{Name: networkName, NetworkSource: v1.NetworkSource{Multus: &v1.MultusNetwork{NetworkName: NADName}}},
-		}
+		setup.NetStat.UpdateStatus(setup.Vmi, setup.Domain)
 
-		domain := &api.Domain{
-			Status: api.DomainStatus{Interfaces: []api.InterfaceStatus{
-				{Mac: ifaceMAC, InterfaceName: guestIfaceName},
-			}},
-		}
-
-		netStat.UpdateStatus(vmi, domain)
-
-		Expect(vmi.Status.Interfaces).To(Equal([]v1.VirtualMachineInstanceNetworkInterface{
+		Expect(setup.Vmi.Status.Interfaces).To(Equal([]v1.VirtualMachineInstanceNetworkInterface{
 			newVMIStatusIface(networkName, nil, ifaceMAC, guestIfaceName),
 		}), "the SR-IOV interface should be reported in the status, associated to the network")
 	})
@@ -279,6 +261,14 @@ var _ = Describe("netstat", func() {
 
 type interfaceCacheFactoryStatusStub struct {
 	podInterfaceCacheStore podInterfaceCacheStoreStatusStub
+}
+
+func newInterfaceCacheFactoryStub() *interfaceCacheFactoryStatusStub {
+	return &interfaceCacheFactoryStatusStub{
+		podInterfaceCacheStore: podInterfaceCacheStoreStatusStub{
+			data: map[string]*cache.PodCacheInterface{},
+		},
+	}
 }
 
 func (i interfaceCacheFactoryStatusStub) CacheForVMI(vmi *v1.VirtualMachineInstance) cache.PodInterfaceCacheStore {
@@ -291,13 +281,20 @@ func (i interfaceCacheFactoryStatusStub) CacheDHCPConfigForPid(pid string) cache
 	return nil
 }
 
-type podInterfaceCacheStoreStatusStub struct{ failRemove bool }
+type podInterfaceCacheStoreStatusStub struct {
+	data       map[string]*cache.PodCacheInterface
+	failRemove bool
+}
 
 func (p podInterfaceCacheStoreStatusStub) Read(iface string) (*cache.PodCacheInterface, error) {
-	return &cache.PodCacheInterface{Iface: &v1.Interface{Name: "net-name"}}, nil
+	if d, exists := p.data[iface]; exists {
+		return &cache.PodCacheInterface{Iface: d.Iface}, nil
+	}
+	return &cache.PodCacheInterface{}, nil
 }
 
 func (p podInterfaceCacheStoreStatusStub) Write(iface string, cacheInterface *cache.PodCacheInterface) error {
+	p.data[iface] = cacheInterface
 	return nil
 }
 
@@ -306,6 +303,88 @@ func (p podInterfaceCacheStoreStatusStub) Remove() error {
 		return fmt.Errorf("remove failed")
 	}
 	return nil
+}
+
+type testSetup struct {
+	Vmi     *v1.VirtualMachineInstance
+	Domain  *api.Domain
+	NetStat *netsetup.NetStat
+
+	ifaceFSCacheFactory *interfaceCacheFactoryStatusStub
+
+	// There are two types of caches used: virt-launcher/pod filesystem & virt-handler in-memory (volatile).
+	// volatileCache flag marks is the setup should also populate the volatile cache when a network interface is added.
+	volatileCache bool
+}
+
+func newTestSetupWithVolatileCache() testSetup {
+	setup := newTestSetup()
+	setup.volatileCache = true
+	return setup
+}
+
+func newTestSetup() testSetup {
+	vmi := &v1.VirtualMachineInstance{}
+	vmi.UID = "123"
+	ifaceFSCacheFactory := newInterfaceCacheFactoryStub()
+	return testSetup{
+		Vmi:                 vmi,
+		Domain:              &api.Domain{},
+		NetStat:             netsetup.NewNetStat(ifaceFSCacheFactory),
+		ifaceFSCacheFactory: ifaceFSCacheFactory,
+	}
+}
+
+// addNetworkInterface is adding a regular[*] network configuration which adds a vNIC.
+// This consist of 4 entities and an optional pod volatile cache:
+// - vmi spec interface
+// - vmi spec network
+// - domain spec interface
+// - virt-launcher/pod filesystem cache
+//
+// [*] Non SR-IOV
+//
+// Guest Agent interface report is not included and if required should be added through `addGuestAgentInterfaces`.
+func (t *testSetup) addNetworkInterface(vmiIface v1.Interface, vmiNetwork v1.Network, domainIface api.Interface, podIPs ...string) {
+	if !(vmiIface.Name == vmiNetwork.Name && vmiIface.Name == domainIface.Alias.GetName()) {
+		panic("network name must be the same")
+	}
+	t.Vmi.Spec.Domain.Devices.Interfaces = append(t.Vmi.Spec.Domain.Devices.Interfaces, vmiIface)
+	t.Vmi.Spec.Networks = append(t.Vmi.Spec.Networks, vmiNetwork)
+
+	t.Domain.Spec.Devices.Interfaces = append(t.Domain.Spec.Devices.Interfaces, domainIface)
+
+	t.addFSCacheInterface(vmiNetwork.Name, podIPs...)
+
+	if t.volatileCache {
+		podCacheInterface := makePodCacheInterface(vmiNetwork.Name, podIPs...)
+		t.NetStat.CachePodInterfaceVolatileData(t.Vmi, vmiNetwork.Name, podCacheInterface)
+	}
+}
+
+// addSRIOVNetworkInterface is adding a SR-IOV network configuration which adds a hostdevice to the guest.
+// This consist of 2 entities:
+// - vmi spec interface
+// - vmi spec network
+//
+// Guest Agent interface report is not included and if required should be added through `addGuestAgentInterfaces`.
+func (t *testSetup) addSRIOVNetworkInterface(vmiIface v1.Interface, vmiNetwork v1.Network) {
+	if vmiIface.Name != vmiNetwork.Name {
+		panic("network name must be the same")
+	}
+	t.Vmi.Spec.Domain.Devices.Interfaces = append(t.Vmi.Spec.Domain.Devices.Interfaces, vmiIface)
+	t.Vmi.Spec.Networks = append(t.Vmi.Spec.Networks, vmiNetwork)
+}
+
+// addGuestAgentInterfaces adds guest agent data.
+// Guest agent data is collected and placed in the DomainStatus.
+// During status update, this data is overriding the one from the domain spec and cache.
+func (t *testSetup) addGuestAgentInterfaces(interfaces ...api.InterfaceStatus) {
+	t.Domain.Status.Interfaces = append(t.Domain.Status.Interfaces, interfaces...)
+}
+
+func (t *testSetup) addFSCacheInterface(name string, podIPs ...string) {
+	t.ifaceFSCacheFactory.CacheForVMI(nil).Write(name, makePodCacheInterface(name, podIPs...))
 }
 
 func makePodCacheInterface(networkName string, podIPs ...string) *cache.PodCacheInterface {
@@ -325,16 +404,17 @@ func newDomainSpecIface(alias, mac string) api.Interface {
 	}
 }
 
-func newDomainStatusIface(name string, IPs []string, mac string) api.InterfaceStatus {
+func newDomainStatusIface(name string, IPs []string, mac, interfaceName string) api.InterfaceStatus {
 	var ip string
 	if len(IPs) > 0 {
 		ip = IPs[0]
 	}
 	return api.InterfaceStatus{
-		Name: name,
-		Ip:   ip,
-		IPs:  IPs,
-		Mac:  mac,
+		Name:          name,
+		Ip:            ip,
+		IPs:           IPs,
+		Mac:           mac,
+		InterfaceName: interfaceName,
 	}
 }
 
@@ -358,5 +438,36 @@ func newVMISpecIfaceWithMasqueradeBinding(name string) v1.Interface {
 		InterfaceBindingMethod: v1.InterfaceBindingMethod{
 			Masquerade: &v1.InterfaceMasquerade{},
 		},
+	}
+}
+func newVMISpecIfaceWithBridgeBinding(name string) v1.Interface {
+	return v1.Interface{
+		Name: name,
+		InterfaceBindingMethod: v1.InterfaceBindingMethod{
+			Bridge: &v1.InterfaceBridge{},
+		},
+	}
+}
+
+func newVMISpecIfaceWithSRIOVBinding(name string) v1.Interface {
+	return v1.Interface{
+		Name: name,
+		InterfaceBindingMethod: v1.InterfaceBindingMethod{
+			SRIOV: &v1.InterfaceSRIOV{},
+		},
+	}
+}
+
+func newVMISpecPodNetwork(name string) v1.Network {
+	return v1.Network{Name: name, NetworkSource: v1.NetworkSource{Pod: &v1.PodNetwork{}}}
+}
+
+func newVMISpecMultusNetwork(name string) v1.Network {
+	return v1.Network{
+		Name: name,
+		NetworkSource: v1.NetworkSource{
+			Multus: &v1.MultusNetwork{
+				NetworkName: "test.network",
+			}},
 	}
 }

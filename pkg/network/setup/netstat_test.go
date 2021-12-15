@@ -234,6 +234,27 @@ var _ = Describe("netstat", func() {
 		}), "the pod IP/s should be reported in the status")
 	})
 
+	It("should report SR-IOV interface when no guest-agent is active", func() {
+		const (
+			networkName = "sriov-network"
+			ifaceMAC    = "C0:01:BE:E7:15:G0:0D"
+		)
+
+		sriovIface := newVMISpecIfaceWithSRIOVBinding(networkName)
+		// The MAC is specified intentionally to illustrate that it is not reported if the GA is not present.
+		sriovIface.MacAddress = ifaceMAC
+		setup.addSRIOVNetworkInterface(
+			sriovIface,
+			newVMISpecMultusNetwork(networkName),
+		)
+
+		setup.NetStat.UpdateStatus(setup.Vmi, setup.Domain)
+
+		Expect(setup.Vmi.Status.Interfaces).To(Equal([]v1.VirtualMachineInstanceNetworkInterface{
+			newVMIStatusIface(networkName, nil, "", ""),
+		}), "the SR-IOV interface should be reported in the status, associated to the network")
+	})
+
 	It("should report SR-IOV interface with MAC and network name, based on VMI spec and guest-agent data", func() {
 		const (
 			networkName    = "sriov-network"

@@ -261,24 +261,24 @@ func MergeAgentStatusesWithDomainData(domInterfaces []api.Interface, interfaceSt
 	}
 
 	// If interface present in domain was not found in interfaceStatuses, add it
-	for mac, alias := range aliasByMac {
-		isCoveredByAgentData := false
-		for _, coveredAlias := range aliasesCoveredByAgent {
-			if alias == coveredAlias {
-				isCoveredByAgentData = true
-				break
-			}
-		}
-		if !isCoveredByAgentData {
-			interfaceStatuses = append(interfaceStatuses,
-				api.InterfaceStatus{
-					Mac:        mac,
-					Name:       alias,
-					InfoSource: netvmispec.InfoSourceDomain,
-				},
-			)
-		}
-	}
+	// for mac, alias := range aliasByMac {
+	// 	isCoveredByAgentData := false
+	// 	for _, coveredAlias := range aliasesCoveredByAgent {
+	// 		if alias == coveredAlias {
+	// 			isCoveredByAgentData = true
+	// 			break
+	// 		}
+	// 	}
+	// 	if !isCoveredByAgentData {
+	// 		interfaceStatuses = append(interfaceStatuses,
+	// 			api.InterfaceStatus{
+	// 				Mac:        mac,
+	// 				Name:       alias,
+	// 				InfoSource: netvmispec.InfoSourceDomain,
+	// 			},
+	// 		)
+	// 	}
+	// }
 
 	return interfaceStatuses
 }

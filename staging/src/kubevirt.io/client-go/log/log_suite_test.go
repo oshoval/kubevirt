@@ -9,7 +9,6 @@ import (
 	"testing"
 
 	"github.com/onsi/ginkgo/v2"
-	"github.com/onsi/ginkgo/v2/config"
 	"github.com/onsi/ginkgo/v2/reporters"
 	"github.com/onsi/gomega"
 )
@@ -23,6 +22,7 @@ func TestLogging(t *testing.T) {
 	projectRoot := findRoot()
 	description = strings.TrimPrefix(description, projectRoot)
 
+	suiteConfig, _ := ginkgo.GinkgoConfiguration()
 	// if run on bazel (XML_OUTPUT_FILE is not empty)
 	// and rules_go is configured to not produce the junit xml
 	// produce it here. Otherwise just run the default RunSpec
@@ -31,11 +31,11 @@ func TestLogging(t *testing.T) {
 		if testTarget != "" {
 			description = testTarget
 		}
-		if config.GinkgoConfig.ParallelTotal > 1 {
-			outputFile = fmt.Sprintf("%s-%d", outputFile, config.GinkgoConfig.ParallelNode)
+		if suiteConfig.ParallelTotal > 1 {
+			outputFile = fmt.Sprintf("%s-%d", outputFile, ginkgo.GinkgoParallelProcess())
 		}
 
-		ginkgo.RunSpecsWithDefaultAndCustomReporters(
+		ginkgo.RunSpecs(
 			t,
 			description,
 			[]ginkgo.Reporter{

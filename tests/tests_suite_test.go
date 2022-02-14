@@ -27,7 +27,6 @@ import (
 	"testing"
 
 	. "github.com/onsi/ginkgo/v2"
-	"github.com/onsi/ginkgo/v2/config"
 	ginkgo_reporters "github.com/onsi/ginkgo/v2/reporters"
 
 	"kubevirt.io/kubevirt/tests/flags"
@@ -60,9 +59,11 @@ func TestTests(t *testing.T) {
 	if qe_reporters.JunitOutput != "" {
 		junitOutput = qe_reporters.JunitOutput
 	}
-	if config.GinkgoConfig.ParallelTotal > 1 {
-		artifactsPath = filepath.Join(artifactsPath, strconv.Itoa(config.GinkgoConfig.ParallelNode))
-		junitOutput = filepath.Join(flags.ArtifactsDir, fmt.Sprintf("partial.junit.functest.%d.xml", config.GinkgoConfig.ParallelNode))
+
+	suiteConfig, _ := GinkgoConfiguration()
+	if suiteConfig.ParallelTotal > 1 {
+		artifactsPath = filepath.Join(artifactsPath, strconv.Itoa(GinkgoParallelProcess()))
+		junitOutput = filepath.Join(flags.ArtifactsDir, fmt.Sprintf("partial.junit.functest.%d.xml", GinkgoParallelProcess()))
 	}
 
 	outputEnricherReporter := reporter.NewCapturedOutputEnricher(

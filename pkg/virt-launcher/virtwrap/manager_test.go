@@ -57,7 +57,7 @@ import (
 	"kubevirt.io/kubevirt/pkg/virt-launcher/virtwrap/stats"
 )
 
-var _ = Describe("Manager", func() {
+var _ = Describe("Manager", Ordered, func() {
 	var mockConn *cli.MockConnection
 	var mockDomain *cli.MockVirDomain
 	var mockDirectIOChecker *converter.MockDirectIOChecker
@@ -72,7 +72,7 @@ var _ = Describe("Manager", func() {
 		_, err := os.Create(isoOutFile)
 		return err
 	}
-	BeforeSuite(func() {
+	BeforeAll(func() {
 		var err error
 		tmpDir, err = ioutil.TempDir("", "cloudinittest")
 		Expect(err).ToNot(HaveOccurred())

@@ -97,7 +97,7 @@ if [ "$KUBEVIRT_E2E_PARALLEL" == "true" ]; then
     functest ${serial_test_args} ${KUBEVIRT_FUNC_TEST_GINKGO_ARGS_PARA}
     exit "$return_value"
 else
-    trap "_out/tests/junit-merger -o ${ARTIFACTS}/junit.functest.xml serial.junit.functest.xml' ${ARTIFACTS}" EXIT
+    trap "_out/tests/junit-merger -o ${ARTIFACTS}/junit.functest.xml serial.junit.functest.xml" EXIT
     additional_test_args=""
     if [ -n "$KUBEVIRT_E2E_SKIP" ]; then
         additional_test_args="${additional_test_args} --skip=${KUBEVIRT_E2E_SKIP}"

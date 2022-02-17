@@ -43,7 +43,6 @@ var _ = Describe("Validating MigrationCreate Admitter", func() {
 	config, _, kvInformer := testutils.NewFakeClusterConfigUsingKVConfig(&v1.KubeVirtConfiguration{})
 
 	// Mock VirtualMachineInstanceMigration
-	var ctrl *gomock.Controller
 	var virtClient *kubecli.MockKubevirtClient
 	var migrationCreateAdmitter *MigrationCreateAdmitter
 	var migrationInterface *kubecli.MockVirtualMachineInstanceMigrationInterface
@@ -73,7 +72,7 @@ var _ = Describe("Validating MigrationCreate Admitter", func() {
 	}
 
 	BeforeEach(func() {
-		ctrl = gomock.NewController(GinkgoT())
+		ctrl := gomock.NewController(GinkgoT())
 		migrationInterface = kubecli.NewMockVirtualMachineInstanceMigrationInterface(ctrl)
 		mockVMIClient = kubecli.NewMockVirtualMachineInstanceInterface(ctrl)
 		virtClient = kubecli.NewMockKubevirtClient(ctrl)

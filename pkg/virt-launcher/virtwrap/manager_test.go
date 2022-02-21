@@ -2203,7 +2203,6 @@ var _ = Describe("migratableDomXML", func() {
 	BeforeEach(func() {
 		ctrl = gomock.NewController(GinkgoT())
 		mockDomain = cli.NewMockVirDomain(ctrl)
-		mockDomain.EXPECT().Free()
 	})
 	It("should remove only the kubevirt migration metadata", func() {
 		domXML := `<domain type="kvm" id="1">

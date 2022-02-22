@@ -32,27 +32,29 @@ import (
 	v1 "kubevirt.io/api/core/v1"
 )
 
+var tmpDir string
+
+var _ = BeforeSuite(func() {
+	var err error
+	tmpDir, err = ioutil.TempDir("", "ignitiontest")
+	Expect(err).ToNot(HaveOccurred())
+	err = SetLocalDirectory(tmpDir)
+	if err != nil {
+		panic(err)
+	}
+})
+
+var _ = AfterSuite(func() {
+	os.RemoveAll(tmpDir)
+})
+
 var _ = Describe("Ignition", func() {
 
 	const vmName = "my-vm"
 	const namespace = "my-namespace"
-	var tmpDir string
+
 	// const ignitionLocalDir = "/var/run/libvirt/ignition-dir"
 	var vmi *v1.VirtualMachineInstance
-
-	BeforeSuite(func() {
-		var err error
-		tmpDir, err = ioutil.TempDir("", "ignitiontest")
-		Expect(err).ToNot(HaveOccurred())
-		err = SetLocalDirectory(tmpDir)
-		if err != nil {
-			panic(err)
-		}
-	})
-
-	AfterSuite(func() {
-		os.RemoveAll(tmpDir)
-	})
 
 	Describe("A new VirtualMachineInstance definition", func() {
 		Context("with ignition data", func() {

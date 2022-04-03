@@ -58,7 +58,12 @@ func ExpectBatch(vmi *v1.VirtualMachineInstance, expected []expect.Batcher, time
 		return err
 	}
 
-	expecter, _, err := NewExpecter(virtClient, vmi, 30*time.Second)
+	defaultTimeout := 30 * time.Second
+	con, err := VmiConsole(virtClient, vmi, defaultTimeout)
+	if err != nil {
+		return err
+	}
+	expecter, _, err := NewExpecter(con, defaultTimeout)
 	if err != nil {
 		return err
 	}
@@ -89,7 +94,13 @@ func SafeExpectBatchWithResponse(vmi *v1.VirtualMachineInstance, expected []expe
 	if err != nil {
 		panic(err)
 	}
-	expecter, _, err := NewExpecter(virtClient, vmi, 30*time.Second)
+
+	timeout := 30 * time.Second
+	con, err := VmiConsole(virtClient, vmi, timeout)
+	if err != nil {
+		return nil, err
+	}
+	expecter, _, err := NewExpecter(con, timeout)
 	if err != nil {
 		return nil, err
 	}
@@ -136,7 +147,14 @@ func SecureBootExpecter(vmi *v1.VirtualMachineInstance) error {
 	if err != nil {
 		return err
 	}
-	expecter, _, err := NewExpecter(virtClient, vmi, 10*time.Second)
+
+	timeout := 10 * time.Second
+	con, err := VmiConsole(virtClient, vmi, timeout)
+	if err != nil {
+		return err
+	}
+
+	expecter, _, err := NewExpecter(con, timeout)
 	if err != nil {
 		return err
 	}
@@ -161,7 +179,13 @@ func NetBootExpecter(vmi *v1.VirtualMachineInstance) error {
 	if err != nil {
 		return err
 	}
-	expecter, _, err := NewExpecter(virtClient, vmi, 10*time.Second)
+
+	timeout := 10 * time.Second
+	con, err := VmiConsole(virtClient, vmi, timeout)
+	if err != nil {
+		return err
+	}
+	expecter, _, err := NewExpecter(con, timeout)
 	if err != nil {
 		return err
 	}
@@ -184,17 +208,10 @@ func NetBootExpecter(vmi *v1.VirtualMachineInstance) error {
 }
 
 // NewExpecter will connect to an already logged in VMI console and return the generated expecter it will wait `timeout` for the connection.
-func NewExpecter(virtCli kubecli.KubevirtClient, vmi *v1.VirtualMachineInstance, timeout time.Duration, opts ...expect.Option) (expect.Expecter, <-chan error, error) {
+func NewExpecter(con kubecli.StreamInterface, timeout time.Duration, opts ...expect.Option) (expect.Expecter, <-chan error, error) {
 	vmiReader, vmiWriter := io.Pipe()
 	expecterReader, expecterWriter := io.Pipe()
 	resCh := make(chan error)
-
-	startTime := time.Now()
-	con, err := virtCli.VirtualMachineInstance(vmi.Namespace).SerialConsole(vmi.Name, &kubecli.SerialConsoleOptions{ConnectionTimeout: timeout})
-	if err != nil {
-		return nil, nil, err
-	}
-	timeout = timeout - time.Now().Sub(startTime)
 
 	go func() {
 		resCh <- con.Stream(kubecli.StreamOptions{
@@ -203,9 +220,10 @@ func NewExpecter(virtCli kubecli.KubevirtClient, vmi *v1.VirtualMachineInstance,
 		})
 	}()
 
+	if opts == nil {
+		opts = WithDefaultOptions()
+	}
 	opts = append(opts, expect.SendTimeout(timeout))
-	opts = append(opts, expect.Verbose(true))
-	opts = append(opts, expect.VerboseWriter(GinkgoWriter))
 	return expect.SpawnGeneric(&expect.GenOptions{
 		In:  vmiWriter,
 		Out: expecterReader,
@@ -274,4 +292,13 @@ func ExpectBatchWithValidatedSend(expecter expect.Expecter, batch []expect.Batch
 
 func RetValue(retcode string) string {
 	return "\n" + retcode + CRLF + ".*" + PromptExpression
+}
+
+func WithDefaultOptions() []expect.Option {
+	return []expect.Option{expect.Verbose(true), expect.VerboseWriter(GinkgoWriter)}
+}
+
+func VmiConsole(virtCli kubecli.KubevirtClient, vmi *v1.VirtualMachineInstance, timeout time.Duration) (kubecli.StreamInterface, error) {
+	return virtCli.VirtualMachineInstance(vmi.Namespace).SerialConsole(
+		vmi.Name, &kubecli.SerialConsoleOptions{ConnectionTimeout: timeout})
 }

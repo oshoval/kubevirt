@@ -25,7 +25,13 @@ func LoginToCirros(vmi *v1.VirtualMachineInstance) error {
 	if err != nil {
 		panic(err)
 	}
-	expecter, _, err := NewExpecter(virtClient, vmi, 10*time.Second)
+
+	timeout := 10 * time.Second
+	con, err := VmiConsole(virtClient, vmi, timeout)
+	if err != nil {
+		return err
+	}
+	expecter, _, err := NewExpecter(con, timeout)
 	if err != nil {
 		return err
 	}
@@ -72,7 +78,12 @@ func LoginToAlpine(vmi *v1.VirtualMachineInstance) error {
 		panic(err)
 	}
 
-	expecter, _, err := NewExpecter(virtClient, vmi, 10*time.Second)
+	defaultTimeout := 10 * time.Second
+	con, err := VmiConsole(virtClient, vmi, defaultTimeout)
+	if err != nil {
+		return err
+	}
+	expecter, _, err := NewExpecter(con, defaultTimeout)
 	if err != nil {
 		return err
 	}
@@ -132,7 +143,12 @@ func LoginToFedora(vmi *v1.VirtualMachineInstance) error {
 		panic(err)
 	}
 
-	expecter, _, err := NewExpecter(virtClient, vmi, 10*time.Second)
+	timeout := 10 * time.Second
+	con, err := VmiConsole(virtClient, vmi, timeout)
+	if err != nil {
+		return err
+	}
+	expecter, _, err := NewExpecter(con, timeout)
 	if err != nil {
 		return err
 	}
@@ -203,13 +219,18 @@ func LoginToFedora(vmi *v1.VirtualMachineInstance) error {
 }
 
 // OnPrivilegedPrompt performs a console check that the prompt is privileged.
-func OnPrivilegedPrompt(vmi *v1.VirtualMachineInstance, timeout int) bool {
+func OnPrivilegedPrompt(vmi *v1.VirtualMachineInstance, wait int) bool {
 	virtClient, err := kubecli.GetKubevirtClient()
 	if err != nil {
 		panic(err)
 	}
 
-	expecter, _, err := NewExpecter(virtClient, vmi, 10*time.Second)
+	timeout := 10 * time.Second
+	con, err := VmiConsole(virtClient, vmi, timeout)
+	if err != nil {
+		return false
+	}
+	expecter, _, err := NewExpecter(con, timeout)
 	if err != nil {
 		return false
 	}
@@ -218,7 +239,7 @@ func OnPrivilegedPrompt(vmi *v1.VirtualMachineInstance, timeout int) bool {
 	b := append([]expect.Batcher{
 		&expect.BSnd{S: "\n"},
 		&expect.BExp{R: PromptExpression}})
-	res, err := expecter.ExpectBatch(b, time.Duration(timeout)*time.Second)
+	res, err := expecter.ExpectBatch(b, time.Duration(wait)*time.Second)
 	if err != nil {
 		log.DefaultLogger().Object(vmi).Infof("Login: %+v", res)
 		return false

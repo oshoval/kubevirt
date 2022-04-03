@@ -138,7 +138,10 @@ var _ = Describe("[rfe_id:127][posneg:negative][crit:medium][vendor:cnv-qe@redha
 				vmi = tests.RunVMIAndExpectLaunch(vmi, 30)
 
 				By("opening 1st console connection")
-				expecter, errChan, err := console.NewExpecter(virtClient, vmi, 30*time.Second)
+				timeout := 30 * time.Second
+				con, err := console.VmiConsole(virtClient, vmi, timeout)
+				Expect(err).ToNot(HaveOccurred())
+				expecter, errChan, err := console.NewExpecter(con, timeout)
 				Expect(err).ToNot(HaveOccurred())
 
 				defer expecter.Close()

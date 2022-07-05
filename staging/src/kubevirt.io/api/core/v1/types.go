@@ -552,6 +552,8 @@ type VirtualMachineInstanceNetworkInterface struct {
 	InterfaceName string `json:"interfaceName,omitempty"`
 	// Specifies the origin of the interface data collected. values: domain, guest-agent, or both
 	InfoSource string `json:"infoSource,omitempty"`
+	// Specifies how many queues are allocated by MultiQueue, 0 if can't be determined
+	QueueCount uint `json:"queueCount"`
 }
 
 type VirtualMachineInstanceGuestOSInfo struct {

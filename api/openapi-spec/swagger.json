@@ -18320,6 +18320,9 @@
    },
    "v1.VirtualMachineInstanceNetworkInterface": {
     "type": "object",
+    "required": [
+     "queueCount"
+    ],
     "properties": {
      "infoSource": {
       "description": "Specifies the origin of the interface data collected. values: domain, guest-agent, or both",
@@ -18347,6 +18350,11 @@
      "name": {
       "description": "Name of the interface, corresponds to name of the network assigned to the interface",
       "type": "string"
+     },
+     "queueCount": {
+      "description": "Specifies how many queues are allocated by MultiQueue, 0 if can't be determined",
+      "type": "integer",
+      "format": "int32"
      }
     }
    },

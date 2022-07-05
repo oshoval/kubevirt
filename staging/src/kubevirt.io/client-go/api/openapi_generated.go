@@ -21168,7 +21168,15 @@ func schema_kubevirtio_api_core_v1_VirtualMachineInstanceNetworkInterface(ref co
 							Format:      "",
 						},
 					},
+					"queueCount": {
+						SchemaProps: spec.SchemaProps{
+							Description: "Specifies how many queues are allocated by MultiQueue, 0 if can't be determined",
+							Type:        []string{"integer"},
+							Format:      "int32",
+						},
+					},
 				},
+				Required: []string{"queueCount"},
 			},
 		},
 	}

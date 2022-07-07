@@ -34,6 +34,11 @@ import (
 	"kubevirt.io/kubevirt/pkg/virt-launcher/virtwrap/api"
 )
 
+const (
+	DefaultInterfaceQueueCount = 1
+	UnknownInterfaceQueueCount = 0
+)
+
 type NetStat struct {
 	cacheCreator cacheCreator
 
@@ -159,9 +164,18 @@ func ifacesStatusFromDomainInterfaces(domainSpecIfaces []api.Interface) []v1.Vir
 			Name:       domainSpecIface.Alias.GetName(),
 			MAC:        domainSpecIface.MAC.MAC,
 			InfoSource: netvmispec.InfoSourceDomain,
+			QueueCount: domainInterfaceQueues(domainSpecIface.Driver),
 		})
 	}
 	return vmiStatusIfaces
+}
+
+func domainInterfaceQueues(driver *api.InterfaceDriver) uint {
+	if driver != nil && driver.Queues != nil {
+		return *driver.Queues
+	}
+
+	return DefaultInterfaceQueueCount
 }
 
 func sriovIfacesStatusFromDomainHostDevices(hostDevices []api.HostDevice, vmiIfacesSpecByName map[string]v1.Interface) []v1.VirtualMachineInstanceNetworkInterface {
@@ -171,6 +185,7 @@ func sriovIfacesStatusFromDomainHostDevices(hostDevices []api.HostDevice, vmiIfa
 		vmiStatusIface := v1.VirtualMachineInstanceNetworkInterface{
 			Name:       hostDevice.Alias.GetName()[len(sriov.AliasPrefix):],
 			InfoSource: netvmispec.InfoSourceDomain,
+			QueueCount: DefaultInterfaceQueueCount,
 		}
 		if iface, exists := vmiIfacesSpecByName[vmiStatusIface.Name]; exists {
 			vmiStatusIface.MAC = iface.MacAddress

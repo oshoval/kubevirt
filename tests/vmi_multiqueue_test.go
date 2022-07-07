@@ -74,10 +74,13 @@ var _ = Describe("[sig-compute]MultiQueue", func() {
 			By("Creating and starting the VMI")
 			vmi, err := virtClient.VirtualMachineInstance(util.NamespaceTestDefault).Create(vmi)
 			Expect(err).ToNot(HaveOccurred())
-			tests.WaitForSuccessfulVMIStartWithTimeout(vmi, 360)
+			vmi = tests.WaitForSuccessfulVMIStartWithTimeout(vmi, 360)
 
 			By("Checking if we can login")
 			Expect(console.LoginToFedora(vmi)).To(Succeed())
+
+			By("Checking QueueCount has the expected value")
+			Expect(vmi.Status.Interfaces[0].QueueCount).To(Equal(uint(numCpus)))
 		})
 
 		It("[test_id:959][rfe_id:2065] Should honor multiQueue requests", func() {
@@ -150,6 +153,5 @@ var _ = Describe("[sig-compute]MultiQueue", func() {
 				Expect(iface.Target.Managed).To(Equal("no"), "we should instruct libvirt not to configure the tap device")
 			}
 		})
-
 	})
 })

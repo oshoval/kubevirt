@@ -151,5 +151,21 @@ var _ = Describe("[sig-compute]MultiQueue", func() {
 			}
 		})
 
+		It("should report the correct queue count when requesting multiple vCPU", func() {
+			vmi := libvmi.NewCirros()
+
+			multiQueue := true
+			vmi.Spec.Domain.CPU = &v1.CPU{Cores: 2, Sockets: 2, Threads: 2}
+			vmi.Spec.Domain.Devices.NetworkInterfaceMultiQueue = &multiQueue
+
+			By("Creating and starting the VMI")
+			vmi, err := virtClient.VirtualMachineInstance(util.NamespaceTestDefault).Create(vmi)
+			Expect(err).ToNot(HaveOccurred())
+			tests.WaitForSuccessfulVMIStartWithTimeout(vmi, 360)
+
+			vmi, err = virtClient.VirtualMachineInstance(vmi.Namespace).Get(vmi.Name, &metav1.GetOptions{})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(vmi.Status.Interfaces[0].QueueCount).To(Equal(uint(vmi.Spec.Domain.CPU.Cores * vmi.Spec.Domain.CPU.Sockets * vmi.Spec.Domain.CPU.Threads)))
+		})
 	})
 })

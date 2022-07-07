@@ -98,27 +98,32 @@ var _ = SIGDescribe("Infosource", func() {
 					InfoSource: netvmispec.InfoSourceDomain,
 					MAC:        primaryInterfaceMac,
 					Name:       primaryNetwork,
+					QueueCount: 1,
 				},
 				{
 					InfoSource:    netvmispec.InfoSourceDomainAndGA,
 					InterfaceName: "eth1",
 					MAC:           secondaryInterface1Mac,
 					Name:          secondaryInterface1Name,
+					QueueCount:    1,
 				},
 				{
 					InfoSource: netvmispec.InfoSourceDomain,
 					MAC:        secondaryInterface2Mac,
 					Name:       secondaryInterface2Name,
+					QueueCount: 1,
 				},
 				{
 					InfoSource:    netvmispec.InfoSourceGuestAgent,
 					InterfaceName: "eth0",
 					MAC:           primaryInterfaceNewMac,
+					QueueCount:    0,
 				},
 				{
 					InfoSource:    netvmispec.InfoSourceGuestAgent,
 					InterfaceName: dummyInterfaceName,
 					MAC:           dummyInterfaceMac,
+					QueueCount:    0,
 				},
 			}
 

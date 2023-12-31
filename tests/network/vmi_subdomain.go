@@ -43,6 +43,10 @@ import (
 	"kubevirt.io/kubevirt/tests/util"
 )
 
+func LabelCID(number int) interface{} {
+	return []interface{}{Label(fmt.Sprintf("test_cid:%d", number))}
+}
+
 var _ = SIGDescribe("Subdomain", func() {
 	var virtClient kubecli.KubevirtClient
 
@@ -86,7 +90,7 @@ var _ = SIGDescribe("Subdomain", func() {
 
 			Expect(assertFQDNinGuest(vmi, expectedFQDN)).To(Succeed(), "failed to get expected FQDN")
 		},
-			Entry("with Masquerade binding and subdomain", fedoraMasqueradeVMI, subdomain),
+			Entry("with Masquerade binding and subdomain", fedoraMasqueradeVMI, subdomain, LabelCID(1234)),
 			Entry("with Bridge binding and subdomain", fedoraBridgeBindingVMI, subdomain),
 			Entry("with Masquerade binding without subdomain", fedoraMasqueradeVMI, ""),
 			Entry("with Bridge binding without subdomain", fedoraBridgeBindingVMI, ""),

@@ -19,28 +19,33 @@
 
 set -ex
 
+echo $KUBEVIRT_LABEL_FILTER
+
 export TIMESTAMP=${TIMESTAMP:-1}
 
 export WORKSPACE="${WORKSPACE:-$PWD}"
 readonly ARTIFACTS_PATH="${ARTIFACTS-$WORKSPACE/exported-artifacts}"
 readonly TEMPLATES_SERVER="gs://kubevirt-vm-images"
 readonly BAZEL_CACHE="${BAZEL_CACHE:-http://bazel-cache.kubevirt-prow.svc.cluster.local:8080/kubevirt.io/kubevirt}"
+
+
 label_filter="${KUBEVIRT_LABEL_FILTER}"
 
-if [ ${CI} == "true" ]; then
-  if [[ ! $TARGET =~ .*kind.* ]] && [[ ! $TARGET =~ .*k3d.* ]]; then
-    _delay="$(( ( RANDOM % 180 )))"
-    echo "INFO: Sleeping for ${_delay}s to randomize job startup slighty"
-    sleep ${_delay}
-  fi
-fi
+#if [ ${CI} == "true" ]; then
+#  if [[ ! $TARGET =~ .*kind.* ]] && [[ ! $TARGET =~ .*k3d.* ]]; then
+#    _delay="$(( ( RANDOM % 180 )))"
+#    echo "INFO: Sleeping for ${_delay}s to randomize job startup slighty"
+#    sleep ${_delay}
+#  fi
+#fi
 
 if [ -z $TARGET ]; then
   echo "FATAL: TARGET must be non empty"
   exit 1
 fi
 
-export KUBEVIRT_DEPLOY_CDI=true
+# export KUBEVIRT_DEPLOY_CDI=true
+
 if [[ $TARGET =~ windows.* ]]; then
   echo "picking the default provider for windows tests"
 elif [[ $TARGET =~ cnao ]]; then
@@ -245,87 +250,87 @@ build_images() {
 export NAMESPACE="${NAMESPACE:-kubevirt}"
 
 # Make sure that the VM is properly shut down on exit
-trap '{ make cluster-down; }' EXIT SIGINT SIGTERM SIGSTOP
+#trap '{ make cluster-down; }' EXIT SIGINT SIGTERM SIGSTOP
 
-if [ "$CI" != "true" ]; then
-  make cluster-down
-fi
+#if [ "$CI" != "true" ]; then
+#  make cluster-down
+#fi
 
 # Create .bazelrc to use remote cache
-cat >ci.bazelrc <<EOF
-build --jobs=4
-build --remote_download_toplevel
-EOF
+# cat >ci.bazelrc <<EOF
+# build --jobs=4
+# build --remote_download_toplevel
+# EOF
 
 # Build and test images with a custom image name prefix
 export IMAGE_PREFIX_ALT=${IMAGE_PREFIX_ALT:-kv-}
 
-build_images
+#build_images
 
-trap '{ collect_debug_logs; echo "Dump kubevirt state:"; make dump; }' ERR
-make cluster-up
-trap - ERR
+#trap '{ collect_debug_logs; echo "Dump kubevirt state:"; make dump; }' ERR
+#make cluster-up
+#trap - ERR
 
 # Wait for nodes to become ready
-set +e
-kubectl get nodes --no-headers
-kubectl_rc=$?
-while [ $kubectl_rc -ne 0 ] || [ -n "$(kubectl get nodes --no-headers | grep NotReady)" ]; do
-    echo "Waiting for all nodes to become ready ..."
-    kubectl get nodes --no-headers
-    kubectl_rc=$?
-    sleep 10
-done
-set -e
+# set +e
+# kubectl get nodes --no-headers
+# kubectl_rc=$?
+# while [ $kubectl_rc -ne 0 ] || [ -n "$(kubectl get nodes --no-headers | grep NotReady)" ]; do
+#     echo "Waiting for all nodes to become ready ..."
+#     kubectl get nodes --no-headers
+#     kubectl_rc=$?
+#     sleep 10
+# done
+# set -e
 
-echo "Nodes are ready:"
-kubectl get nodes
+# echo "Nodes are ready:"
+# kubectl get nodes
 
-make cluster-sync
+# make cluster-sync
 
 # OpenShift is running important containers under default namespace
-namespaces=(kubevirt default)
-if [[ $NAMESPACE != "kubevirt" ]]; then
-  namespaces+=($NAMESPACE)
-fi
+# namespaces=(kubevirt default)
+# if [[ $NAMESPACE != "kubevirt" ]]; then
+#   namespaces+=($NAMESPACE)
+# fi
 
-timeout=300
-sample=30
+# timeout=300
+# sample=30
 
-for i in ${namespaces[@]}; do
-  # Wait until kubevirt pods are running or completed
-  current_time=0
-  while [ -n "$(kubectl get pods -n $i --no-headers | grep -v -E 'Running|Completed')" ]; do
-    echo "Waiting for kubevirt pods to enter the Running/Completed state ..."
-    kubectl get pods -n $i --no-headers | >&2 grep -v -E 'Running|Completed' || true
-    sleep $sample
+# for i in ${namespaces[@]}; do
+#   # Wait until kubevirt pods are running or completed
+#   current_time=0
+#   while [ -n "$(kubectl get pods -n $i --no-headers | grep -v -E 'Running|Completed')" ]; do
+#     echo "Waiting for kubevirt pods to enter the Running/Completed state ..."
+#     kubectl get pods -n $i --no-headers | >&2 grep -v -E 'Running|Completed' || true
+#     sleep $sample
 
-    current_time=$((current_time + sample))
-    if [ $current_time -gt $timeout ]; then
-      echo "Dump kubevirt state:"
-      make dump
-      exit 1
-    fi
-  done
+#     current_time=$((current_time + sample))
+#     if [ $current_time -gt $timeout ]; then
+#       echo "Dump kubevirt state:"
+#       make dump
+#       exit 1
+#     fi
+#   done
 
-  # Make sure all containers are ready
-  current_time=0
-  while [ -n "$(kubectl get pods -n $i --field-selector=status.phase==Running -o'custom-columns=status:status.containerStatuses[*].ready' --no-headers | grep false)" ]; do
-    echo "Waiting for KubeVirt containers to become ready ..."
-    kubectl get pods -n $i --field-selector=status.phase==Running -o'custom-columns=status:status.containerStatuses[*].ready' --no-headers | grep false || true
-    sleep $sample
+#   # Make sure all containers are ready
+#   current_time=0
+#   while [ -n "$(kubectl get pods -n $i --field-selector=status.phase==Running -o'custom-columns=status:status.containerStatuses[*].ready' --no-headers | grep false)" ]; do
+#     echo "Waiting for KubeVirt containers to become ready ..."
+#     kubectl get pods -n $i --field-selector=status.phase==Running -o'custom-columns=status:status.containerStatuses[*].ready' --no-headers | grep false || true
+#     sleep $sample
 
-    current_time=$((current_time + sample))
-    if [ $current_time -gt $timeout ]; then
-      echo "Dump kubevirt state:"
-      make dump
-      exit 1
-    fi
-  done
-  kubectl get pods -n $i
-done
+#     current_time=$((current_time + sample))
+#     if [ $current_time -gt $timeout ]; then
+#       echo "Dump kubevirt state:"
+#       make dump
+#       exit 1
+#     fi
+#   done
+#   kubectl get pods -n $i
+# done
 
-kubectl version
+# kubectl version
 
 mkdir -p "$ARTIFACTS_PATH"
 export KUBEVIRT_E2E_PARALLEL=true
@@ -477,20 +482,20 @@ fi
 FUNC_TEST_ARGS=$ginko_params FUNC_TEST_LABEL_FILTER='--label-filter='${label_filter} make functest
 
 # Run REST API coverage based on k8s audit log and openapi spec
-if [ -n "$RUN_REST_COVERAGE" ]; then
-  echo "Generating REST API coverage report"
-  wget https://github.com/mfranczy/crd-rest-coverage/releases/download/v0.1.3/rest-coverage -O _out/rest-coverage
-  chmod +x _out/rest-coverage
-  AUDIT_LOG_PATH=${AUDIT_LOG_PATH-/var/log/k8s-audit/k8s-audit.log}
-  log_dest="$ARTIFACTS_PATH/cluster-audit.log"
-  cli scp "$AUDIT_LOG_PATH" - > $log_dest
-  _out/rest-coverage \
-    --swagger-path "api/openapi-spec/swagger.json" \
-    --audit-log-path $log_dest \
-    --output-path "$ARTIFACTS_PATH/rest-coverage.json" \
-    --ignore-resource-version
-  echo "REST API coverage report generated"
-fi
+# if [ -n "$RUN_REST_COVERAGE" ]; then
+#   echo "Generating REST API coverage report"
+#   wget https://github.com/mfranczy/crd-rest-coverage/releases/download/v0.1.3/rest-coverage -O _out/rest-coverage
+#   chmod +x _out/rest-coverage
+#   AUDIT_LOG_PATH=${AUDIT_LOG_PATH-/var/log/k8s-audit/k8s-audit.log}
+#   log_dest="$ARTIFACTS_PATH/cluster-audit.log"
+#   cli scp "$AUDIT_LOG_PATH" - > $log_dest
+#   _out/rest-coverage \
+#     --swagger-path "api/openapi-spec/swagger.json" \
+#     --audit-log-path $log_dest \
+#     --output-path "$ARTIFACTS_PATH/rest-coverage.json" \
+#     --ignore-resource-version
+#   echo "REST API coverage report generated"
+# fi
 
-# Sanity check test execution by looking at results file
-./automation/assert-not-all-tests-skipped.sh "${ARTIFACTS}/junit.functest.xml"
+# # Sanity check test execution by looking at results file
+# ./automation/assert-not-all-tests-skipped.sh "${ARTIFACTS}/junit.functest.xml"

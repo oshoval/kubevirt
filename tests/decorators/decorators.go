@@ -1,6 +1,10 @@
 package decorators
 
-import . "github.com/onsi/ginkgo/v2"
+import (
+	"fmt"
+
+	. "github.com/onsi/ginkgo/v2"
+)
 
 var (
 	//
@@ -56,3 +60,7 @@ var (
 	// Requires a storage class without support for snapshots
 	RequiresNoSnapshotStorageClass = []interface{}{Label("RequiresNoSnapshotStorageClass")}
 )
+
+func TestCID(number int) interface{} {
+	return []interface{}{Label(fmt.Sprintf("test_cid:%d", number))}
+}

@@ -25,6 +25,7 @@ import (
 	"fmt"
 
 	"kubevirt.io/kubevirt/tests/decorators"
+	"kubevirt.io/kubevirt/tests/libnet"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -66,7 +67,7 @@ var _ = Describe("[sig-compute]MultiQueue", decorators.SigCompute, func() {
 		})
 
 		DescribeTable("should be able to successfully boot fedora to the login prompt with multi-queue without being blocked by selinux", func(interfaceModel string, expectedQueueCount int32) {
-			vmi := tests.NewRandomFedoraVMI()
+			vmi := libvmi.NewFedora(libnet.WithMasqueradeNetworking()...)
 			Expect(numCpus).To(BeNumerically("<=", availableCPUs),
 				fmt.Sprintf("Testing environment only has nodes with %d CPUs available, but required are %d CPUs", availableCPUs, numCpus),
 			)

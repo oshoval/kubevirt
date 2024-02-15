@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"kubevirt.io/kubevirt/tests/libmigration"
+	"kubevirt.io/kubevirt/tests/libnet"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -154,7 +155,7 @@ var _ = Describe("[Serial][sig-monitoring]VM Monitoring", Serial, decorators.Sig
 
 		It("Should correctly update metrics on successful VMIM", func() {
 			By("Creating VMIs")
-			vmi := tests.NewRandomFedoraVMI()
+			vmi := libvmi.NewFedora(libnet.WithMasqueradeNetworking()...)
 			vmi = tests.RunVMIAndExpectLaunch(vmi, 240)
 
 			By("Migrating VMIs")

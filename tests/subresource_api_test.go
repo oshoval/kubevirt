@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"kubevirt.io/kubevirt/tests/decorators"
+	"kubevirt.io/kubevirt/tests/libnet"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -341,7 +342,7 @@ var _ = Describe("[sig-compute]Subresource Api", decorators.SigCompute, func() {
 
 			BeforeEach(func() {
 				var err error
-				vmi := tests.NewRandomFedoraVMI()
+				vmi := libvmi.NewFedora(libnet.WithMasqueradeNetworking()...)
 				vmi.Namespace = testsuite.GetTestNamespace(vmi)
 				vm = libvmi.NewVirtualMachine(vmi, libvmi.WithRunning())
 				vm, err = virtCli.VirtualMachine(testsuite.GetTestNamespace(vmi)).Create(context.Background(), vm)

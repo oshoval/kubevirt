@@ -6,6 +6,8 @@ import (
 	"strings"
 
 	"kubevirt.io/kubevirt/tests/decorators"
+	"kubevirt.io/kubevirt/tests/libnet"
+	"kubevirt.io/kubevirt/tests/libvmi"
 
 	expect "github.com/google/goexpect"
 	. "github.com/onsi/ginkgo/v2"
@@ -77,7 +79,7 @@ var _ = Describe("[Serial][sig-compute]HostDevices", Serial, decorators.SigCompu
 			tests.UpdateKubeVirtConfigValueAndWait(config)
 
 			By("Creating a Fedora VMI with the sound card as a host device")
-			randomVMI := tests.NewRandomFedoraVMI()
+			randomVMI := libvmi.NewFedora(libnet.WithMasqueradeNetworking()...)
 			randomVMI.Spec.Domain.Devices.HostDevices = hostDevs
 			vmi, err := virtClient.VirtualMachineInstance(util.NamespaceTestDefault).Create(context.Background(), randomVMI)
 			Expect(err).ToNot(HaveOccurred())

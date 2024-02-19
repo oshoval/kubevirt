@@ -2159,11 +2159,6 @@ var _ = SIGMigrationDescribe("VM Live Migration", func() {
 		})
 
 		Context("live migration cancelation", func() {
-			type vmiBuilder func() *v1.VirtualMachineInstance
-
-			newVirtualMachineInstanceWithFedoraContainerDisk := func() *v1.VirtualMachineInstance {
-				return tests.NewRandomFedoraVMI()
-			}
 
 			newVirtualMachineInstanceWithFedoraRWXBlockDisk := func() *v1.VirtualMachineInstance {
 				if !libstorage.HasCDI() {
@@ -2193,8 +2188,7 @@ var _ = SIGMigrationDescribe("VM Live Migration", func() {
 				return vmi
 			}
 
-			DescribeTable("should be able to cancel a migration", decorators.SigStorage, func(createVMI vmiBuilder, with_virtctl bool) {
-				vmi := createVMI()
+			DescribeTable("should be able to cancel a migration", decorators.SigStorage, func(vmi *v1.VirtualMachineInstance, with_virtctl bool) {
 				vmi.Spec.Domain.Resources.Requests[k8sv1.ResourceMemory] = resource.MustParse(fedoraVMSize)
 
 				By("Limiting the bandwidth of migrations in the test namespace")
@@ -2214,10 +2208,10 @@ var _ = SIGMigrationDescribe("VM Live Migration", func() {
 				By("Waiting for the migration object to disappear")
 				libwait.WaitForMigrationToDisappearWithTimeout(migration, 240)
 			},
-				Entry("[sig-storage][test_id:2226] with ContainerDisk", newVirtualMachineInstanceWithFedoraContainerDisk, false),
-				Entry("[sig-storage][storage-req][test_id:2731] with RWX block disk from block volume PVC", decorators.StorageReq, newVirtualMachineInstanceWithFedoraRWXBlockDisk, false),
-				Entry("[sig-storage][test_id:2228] with ContainerDisk and virtctl", newVirtualMachineInstanceWithFedoraContainerDisk, true),
-				Entry("[sig-storage][storage-req][test_id:2732] with RWX block disk and virtctl", decorators.StorageReq, newVirtualMachineInstanceWithFedoraRWXBlockDisk, true))
+				Entry("[sig-storage][test_id:2226] with ContainerDisk", libvmi.NewFedora(libnet.WithMasqueradeNetworking()...), false),
+				Entry("[sig-storage][storage-req][test_id:2731] with RWX block disk from block volume PVC", decorators.StorageReq, newVirtualMachineInstanceWithFedoraRWXBlockDisk(), false),
+				Entry("[sig-storage][test_id:2228] with ContainerDisk and virtctl", libvmi.NewFedora(libnet.WithMasqueradeNetworking()...), true),
+				Entry("[sig-storage][storage-req][test_id:2732] with RWX block disk and virtctl", decorators.StorageReq, newVirtualMachineInstanceWithFedoraRWXBlockDisk(), true))
 
 			DescribeTable("Immediate migration cancellation after migration starts running", func(with_virtctl bool) {
 				vmi := libvmi.NewFedora(libnet.WithMasqueradeNetworking()...)

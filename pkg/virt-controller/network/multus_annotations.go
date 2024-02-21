@@ -122,11 +122,11 @@ func newMultusAnnotationData(namespace string, interfaces []v1.Interface, networ
 		multusIfaceMac = multusIface.MacAddress
 	}
 	return networkv1.NetworkSelectionElement{
-		InterfaceRequest: podInterfaceName,
-		MacRequest:       multusIfaceMac,
-		Namespace:        namespace,
-		Name:             networkName,
-		CNIArgs:          &map[string]interface{}{"ipamClaim": fmt.Sprintf("%s.%s", vmName, network.Name)},
+		InterfaceRequest:   podInterfaceName,
+		MacRequest:         multusIfaceMac,
+		Namespace:          namespace,
+		Name:               networkName,
+		IPAMClaimReference: fmt.Sprintf("%s.%s", vmName, network.Name),
 	}
 }
 

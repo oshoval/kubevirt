@@ -136,4 +136,8 @@ done
 
 configure_prometheus
 
+# TODO add to CSV etc and vendor a version
+_kubectl delete crd ipamclaims.k8s.cni.cncf.io --ignore-not-found
+_kubectl apply -f https://raw.githubusercontent.com/k8snetworkplumbingwg/ipamclaims/main/artifacts/k8s.cni.cncf.io_ipamclaims.yaml
+
 echo "Done $0"

@@ -59,7 +59,7 @@ import (
 	"kubevirt.io/client-go/log"
 	cdiv1 "kubevirt.io/containerized-data-importer-api/pkg/apis/core/v1beta1"
 
-	persistentipsapi "github.com/maiqueb/persistentips/pkg/crd/persistentip/v1alpha1"
+	ipamclaims "github.com/k8snetworkplumbingwg/ipamclaims/pkg/crd/ipamclaims/v1alpha1"
 
 	"kubevirt.io/kubevirt/pkg/controller"
 	"kubevirt.io/kubevirt/pkg/instancetype"
@@ -3102,8 +3102,8 @@ func (c *VMController) sync(vm *virtv1.VirtualMachine, vmi *virtv1.VirtualMachin
 	return vm, syncErr, nil
 }
 
-func createIPAMClaim(vm *virtv1.VirtualMachine, claimName string, network virtv1.Network) *persistentipsapi.IPAMClaim {
-	return &persistentipsapi.IPAMClaim{
+func createIPAMClaim(vm *virtv1.VirtualMachine, claimName string, network virtv1.Network) *ipamclaims.IPAMClaim {
+	return &ipamclaims.IPAMClaim{
 		ObjectMeta: v1.ObjectMeta{
 			Name:      claimName,
 			Namespace: vm.Namespace,
@@ -3111,7 +3111,7 @@ func createIPAMClaim(vm *virtv1.VirtualMachine, claimName string, network virtv1
 				*v1.NewControllerRef(vm, virtv1.VirtualMachineGroupVersionKind),
 			},
 		},
-		Spec: persistentipsapi.IPAMClaimSpec{
+		Spec: ipamclaims.IPAMClaimSpec{
 			Network: network.Multus.NetworkName,
 		},
 	}

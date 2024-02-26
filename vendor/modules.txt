@@ -225,6 +225,12 @@ github.com/josharian/native
 # github.com/json-iterator/go v1.1.12
 ## explicit; go 1.12
 github.com/json-iterator/go
+# github.com/k8snetworkplumbingwg/ipamclaims v0.4.0-alpha
+## explicit; go 1.20
+github.com/k8snetworkplumbingwg/ipamclaims/pkg/crd/ipamclaims/v1alpha1
+github.com/k8snetworkplumbingwg/ipamclaims/pkg/crd/ipamclaims/v1alpha1/apis/clientset/versioned
+github.com/k8snetworkplumbingwg/ipamclaims/pkg/crd/ipamclaims/v1alpha1/apis/clientset/versioned/scheme
+github.com/k8snetworkplumbingwg/ipamclaims/pkg/crd/ipamclaims/v1alpha1/apis/clientset/versioned/typed/ipamclaims/v1alpha1
 # github.com/k8snetworkplumbingwg/network-attachment-definition-client v1.6.0
 ## explicit; go 1.21
 github.com/k8snetworkplumbingwg/network-attachment-definition-client/pkg/apis/k8s.cni.cncf.io
@@ -251,12 +257,6 @@ github.com/machadovilaca/operator-observability/pkg/operatorrules
 github.com/mailru/easyjson/buffer
 github.com/mailru/easyjson/jlexer
 github.com/mailru/easyjson/jwriter
-# github.com/maiqueb/persistentips v0.3.0-alpha
-## explicit; go 1.20
-github.com/maiqueb/persistentips/pkg/crd/persistentip/v1alpha1
-github.com/maiqueb/persistentips/pkg/crd/persistentip/v1alpha1/apis/clientset/versioned
-github.com/maiqueb/persistentips/pkg/crd/persistentip/v1alpha1/apis/clientset/versioned/scheme
-github.com/maiqueb/persistentips/pkg/crd/persistentip/v1alpha1/apis/clientset/versioned/typed/persistentip/v1alpha1
 # github.com/mattn/go-colorable v0.1.13
 ## explicit; go 1.15
 github.com/mattn/go-colorable

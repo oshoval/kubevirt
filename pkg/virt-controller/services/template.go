@@ -56,7 +56,7 @@ import (
 	"kubevirt.io/kubevirt/pkg/virt-controller/watch/topology"
 	"kubevirt.io/kubevirt/pkg/virt-launcher/virtwrap/api"
 
-	persistentipsapi "github.com/maiqueb/persistentips/pkg/crd/persistentip/v1alpha1"
+	ipamclaims "github.com/k8snetworkplumbingwg/ipamclaims/pkg/crd/ipamclaims/v1alpha1"
 )
 
 const (
@@ -1554,7 +1554,7 @@ func readinessGates() []k8sv1.PodReadinessGate {
 // to copy owner ref from VMI (assuming it exists here, and that there is just one)
 // passed here vmi instead of VM, need to fix
 // fix the owner ref getting, render should get it
-func createIPAMClaim(vmi *v1.VirtualMachineInstance, claimName string, network v1.Network) *persistentipsapi.IPAMClaim {
+func createIPAMClaim(vmi *v1.VirtualMachineInstance, claimName string, network v1.Network) *ipamclaims.IPAMClaim {
 	var ownerRef metav1.OwnerReference
 	refs := vmi.OwnerReferences
 	for i := range refs {
@@ -1563,7 +1563,7 @@ func createIPAMClaim(vmi *v1.VirtualMachineInstance, claimName string, network v
 		}
 	}
 
-	return &persistentipsapi.IPAMClaim{
+	return &ipamclaims.IPAMClaim{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      claimName,
 			Namespace: vmi.Namespace,
@@ -1571,7 +1571,7 @@ func createIPAMClaim(vmi *v1.VirtualMachineInstance, claimName string, network v
 				ownerRef,
 			},
 		},
-		Spec: persistentipsapi.IPAMClaimSpec{
+		Spec: ipamclaims.IPAMClaimSpec{
 			Network: network.Multus.NetworkName,
 		},
 	}

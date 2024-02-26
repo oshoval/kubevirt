@@ -9,7 +9,7 @@ import (
 	time "time"
 
 	gomock "github.com/golang/mock/gomock"
-	versioned "github.com/maiqueb/persistentips/pkg/crd/persistentip/v1alpha1/apis/clientset/versioned"
+	versioned "github.com/k8snetworkplumbingwg/ipamclaims/pkg/crd/ipamclaims/v1alpha1/apis/clientset/versioned"
 	v1 "github.com/openshift/client-go/route/clientset/versioned/typed/route/v1"
 	v10 "github.com/openshift/client-go/security/clientset/versioned/typed/security/v1"
 	v11 "k8s.io/api/autoscaling/v1"

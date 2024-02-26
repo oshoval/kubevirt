@@ -25,7 +25,7 @@ import (
 	"os"
 	"sync"
 
-	ipamclaimsinterface "github.com/maiqueb/persistentips/pkg/crd/persistentip/v1alpha1/apis/clientset/versioned"
+	ipamclaims "github.com/k8snetworkplumbingwg/ipamclaims/pkg/crd/ipamclaims/v1alpha1/apis/clientset/versioned"
 
 	routev1 "github.com/openshift/client-go/route/clientset/versioned/typed/route/v1"
 
@@ -212,7 +212,7 @@ func GetKubevirtSubresourceClientFromFlags(master string, kubeconfig string) (Ku
 		return nil, err
 	}
 
-	ipamClaimsClient, err := ipamclaimsinterface.NewForConfig(config)
+	ipamClaimsClient, err := ipamclaims.NewForConfig(config)
 	if err != nil {
 		return nil, err
 	}
@@ -414,7 +414,7 @@ func GetKubevirtClientFromRESTConfig(config *rest.Config) (KubevirtClient, error
 		return nil, err
 	}
 
-	ipamClaimsClient, err := ipamclaimsinterface.NewForConfig(config)
+	ipamClaimsClient, err := ipamclaims.NewForConfig(config)
 	if err != nil {
 		return nil, err
 	}

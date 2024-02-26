@@ -2982,35 +2982,35 @@ func (c *VMController) sync(vm *virtv1.VirtualMachine, vmi *virtv1.VirtualMachin
 		syncErr = &syncErrorImpl{fmt.Errorf("Error encountered while storing Instancetype ControllerRevisions: %v", err), FailedCreateVirtualMachineReason}
 	}
 
-	if syncErr == nil && vmi != nil {
-		// create IPAMClaims
-		for _, network := range vmi.Spec.Networks {
-			if network.Pod != nil {
-				log.Log.Object(vm).V(5).Infof("skipped pod network IPAM claim creation")
-				continue
-			} else if network.Multus != nil && network.Multus.Default {
-				log.Log.Object(vm).V(5).Infof("skipped multus default network IPAM claim creation")
-				continue
-			}
+	// if syncErr == nil && vmi != nil {
+	// 	// create IPAMClaims
+	// 	for _, network := range vmi.Spec.Networks {
+	// 		if network.Pod != nil {
+	// 			log.Log.Object(vm).V(5).Infof("skipped pod network IPAM claim creation")
+	// 			continue
+	// 		} else if network.Multus != nil && network.Multus.Default {
+	// 			log.Log.Object(vm).V(5).Infof("skipped multus default network IPAM claim creation")
+	// 			continue
+	// 		}
 
-			claimName := fmt.Sprintf("%s.%s", vm.Name, network.Name)
-			log.Log.Object(vm).Infof("about to create ipam Claim for %q", claimName)
-			_, err = c.clientset.IPAMClaimsClient().K8sV1alpha1().IPAMClaims(vmi.Namespace).Create(
-				context.Background(),
-				createIPAMClaim(vm, claimName, network),
-				v1.CreateOptions{},
-			)
-			if err != nil && !apiErrors.IsAlreadyExists(err) {
-				syncErr = &syncErrorImpl{
-					err:    fmt.Errorf("failed to create an IPAM Claim for %q: %v", claimName, err),
-					reason: FailedCreateIPAMClaim,
-				}
-			}
-			if err == nil {
-				log.Log.Object(vm).Infof("WOOP !!! created ipam Claim for %q", claimName)
-			}
-		}
-	}
+	// 		claimName := fmt.Sprintf("%s.%s", vm.Name, network.Name)
+	// 		log.Log.Object(vm).Infof("about to create ipam Claim for %q", claimName)
+	// 		_, err = c.clientset.IPAMClaimsClient().K8sV1alpha1().IPAMClaims(vmi.Namespace).Create(
+	// 			context.Background(),
+	// 			createIPAMClaim(vm, claimName, network),
+	// 			v1.CreateOptions{},
+	// 		)
+	// 		if err != nil && !apiErrors.IsAlreadyExists(err) {
+	// 			syncErr = &syncErrorImpl{
+	// 				err:    fmt.Errorf("failed to create an IPAM Claim for %q: %v", claimName, err),
+	// 				reason: FailedCreateIPAMClaim,
+	// 			}
+	// 		}
+	// 		if err == nil {
+	// 			log.Log.Object(vm).Infof("WOOP !!! created ipam Claim for %q", claimName)
+	// 		}
+	// 	}
+	// }
 
 	if syncErr == nil {
 		dataVolumesReady, err := c.handleDataVolumes(vm, dataVolumes)

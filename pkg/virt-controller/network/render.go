@@ -21,6 +21,7 @@ package network
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -37,16 +38,23 @@ import (
 const MULTUS_RESOURCE_NAME_ANNOTATION = "k8s.v1.cni.cncf.io/resourceName"
 const MULTUS_DEFAULT_NETWORK_CNI_ANNOTATION = "v1.multus-cni.io/default-network"
 
-func GetNetworkToResourceMap(virtClient kubecli.KubevirtClient, vmi *v1.VirtualMachineInstance) (networkToResourceMap map[string]string, err error) {
+func GetNetworkToResourceMap(virtClient kubecli.KubevirtClient, vmi *v1.VirtualMachineInstance) (networkToResourceMap map[string]string, persistentIPNetworks map[string]bool, err error) {
 	networkToResourceMap = make(map[string]string)
+	persistentIPNetworks = make(map[string]bool)
+
 	for _, network := range vmi.Spec.Networks {
 		if network.Multus != nil {
 			namespace, networkName := getNamespaceAndNetworkName(vmi.Namespace, network.Multus.NetworkName)
 			crd, err := virtClient.NetworkClient().K8sCniCncfIoV1().NetworkAttachmentDefinitions(namespace).Get(context.Background(), networkName, metav1.GetOptions{})
 			if err != nil {
-				return map[string]string{}, fmt.Errorf("Failed to locate network attachment definition %s/%s", namespace, networkName)
+				return map[string]string{}, map[string]bool{}, fmt.Errorf("Failed to locate network attachment definition %s/%s", namespace, networkName)
 			}
 			networkToResourceMap[network.Name] = getResourceNameForNetwork(crd)
+			val, err := getAllowPersistentIPsForNetwork(crd)
+			if err != nil {
+				return map[string]string{}, map[string]bool{}, err
+			}
+			persistentIPNetworks[network.Name] = val
 		}
 	}
 	return
@@ -58,6 +66,28 @@ func getResourceNameForNetwork(network *networkv1.NetworkAttachmentDefinition) s
 		return resourceName
 	}
 	return "" // meaning the network is not served by resources
+}
+
+func getAllowPersistentIPsForNetwork(network *networkv1.NetworkAttachmentDefinition) (bool, error) {
+	var configMap map[string]interface{}
+
+	err := json.Unmarshal([]byte(network.Spec.Config), &configMap)
+	if err != nil {
+		return false, fmt.Errorf("failed to unmarshal NAD spec.config JSON: %v", err)
+	}
+
+	const allowPersistentIPsKey = "allowPersistentIPs"
+	val, ok := configMap[allowPersistentIPsKey]
+	if !ok {
+		return false, nil
+	}
+
+	boolVal, ok := val.(bool)
+	if !ok {
+		return false, fmt.Errorf("value for key %s is not a boolean", allowPersistentIPsKey)
+	}
+
+	return boolVal, nil
 }
 
 func getNamespaceAndNetworkName(namespace string, fullNetworkName string) (string, string) {

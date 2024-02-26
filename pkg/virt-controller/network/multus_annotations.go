@@ -66,6 +66,7 @@ func GenerateMultusCNIAnnotationFromNameScheme(namespace string, vmName string, 
 	for _, network := range networks {
 		if vmispec.IsSecondaryMultusNetwork(network) {
 			podInterfaceName := networkNameScheme[network.Name]
+			// maybe need to pass down here the map and if the condition is met to take the value
 			multusNetworkAnnotationPool.add(
 				newMultusAnnotationData(namespace, interfaces, network, podInterfaceName, vmName))
 		}

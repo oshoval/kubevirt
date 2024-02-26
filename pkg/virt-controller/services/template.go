@@ -28,6 +28,7 @@ import (
 
 	networkv1 "github.com/k8snetworkplumbingwg/network-attachment-definition-client/pkg/apis/k8s.cni.cncf.io/v1"
 	k8sv1 "k8s.io/api/core/v1"
+	apiErrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -54,6 +55,8 @@ import (
 	"kubevirt.io/kubevirt/pkg/virt-controller/network"
 	"kubevirt.io/kubevirt/pkg/virt-controller/watch/topology"
 	"kubevirt.io/kubevirt/pkg/virt-launcher/virtwrap/api"
+
+	persistentipsapi "github.com/maiqueb/persistentips/pkg/crd/persistentip/v1alpha1"
 )
 
 const (
@@ -341,7 +344,8 @@ func (t *templateService) renderLaunchManifest(vmi *v1.VirtualMachineInstance, i
 	gracePeriodSeconds = gracePeriodSeconds + int64(15)
 	gracePeriodKillAfter := gracePeriodSeconds + int64(15)
 
-	networkToResourceMap, err := network.GetNetworkToResourceMap(t.virtClient, vmi)
+	//persistentIPNetworks
+	networkToResourceMap, _, err := network.GetNetworkToResourceMap(t.virtClient, vmi)
 	if err != nil {
 		return nil, err
 	}
@@ -523,6 +527,31 @@ func (t *templateService) renderLaunchManifest(vmi *v1.VirtualMachineInstance, i
 	if tempPod {
 		// mark pod as temp - only used for provisioning
 		podAnnotations[v1.EphemeralProvisioningObject] = "true"
+	}
+
+	// augment / create claims only if hasOwnerVM
+	// TODO all is need to be done only if hasOwnerVM()
+
+	// can we get the vm form the vmi owner ref?
+	// TODO used vmi.Name instead of vm.name
+	for _, network := range vmi.Spec.Networks {
+		if network.Pod != nil {
+			continue
+		} else if network.Multus != nil && network.Multus.Default {
+			continue
+		}
+
+		claimName := fmt.Sprintf("%s.%s", vmi.Name, network.Name)                 // vmi.name instead of vm
+		log.Log.Object(vmi).Infof("about to create ipam Claim for %q", claimName) // vmi instead of vm
+		_, err = t.virtClient.IPAMClaimsClient().K8sV1alpha1().IPAMClaims(vmi.Namespace).Create(
+			context.Background(),
+			createIPAMClaim(vmi, claimName, network), // passed vmi instead vm
+			metav1.CreateOptions{},
+		)
+		if err != nil && !apiErrors.IsAlreadyExists(err) {
+			return nil, err
+
+		}
 	}
 
 	var initContainers []k8sv1.Container
@@ -1326,6 +1355,11 @@ func generatePodAnnotations(vmi *v1.VirtualMachineInstance, config *virtconfig.C
 		return iface.State != v1.InterfaceStateAbsent
 	})
 	nonAbsentNets := vmispec.FilterNetworksByInterfaces(vmi.Spec.Networks, nonAbsentIfaces)
+	// filter here the map of persistentIp for IsSecondaryMultusNetwork, or maybe on the caller
+	// in case we already extract nonAbsentNets for building the interface Scheme and reusing it outside
+	// maybe we dont need to filter, but just to extract the naming scheme, and recheck IsSecondaryMultusNetwork outside
+	// when doing the IPAMClaim create loop, iterating the vm networks (but not that here they are filtered, so maybe
+	// we can use the scheme to know if they passed the filtering)
 	multusAnnotation, err := network.GenerateMultusCNIAnnotation(vmi.Namespace, vmi.Name, nonAbsentIfaces, nonAbsentNets, config)
 	if err != nil {
 		return nil, err
@@ -1512,6 +1546,33 @@ func readinessGates() []k8sv1.PodReadinessGate {
 	return []k8sv1.PodReadinessGate{
 		{
 			ConditionType: v1.VirtualMachineUnpaused,
+		},
+	}
+}
+
+// TODO add rbacs, remove the code from vm.go (and remove current rbacs)
+// to copy owner ref from VMI (assuming it exists here, and that there is just one)
+// passed here vmi instead of VM, need to fix
+// fix the owner ref getting, render should get it
+func createIPAMClaim(vmi *v1.VirtualMachineInstance, claimName string, network v1.Network) *persistentipsapi.IPAMClaim {
+	var ownerRef metav1.OwnerReference
+	refs := vmi.OwnerReferences
+	for i := range refs {
+		if refs[i].Controller != nil && *refs[i].Controller {
+			ownerRef = refs[i]
+		}
+	}
+
+	return &persistentipsapi.IPAMClaim{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      claimName,
+			Namespace: vmi.Namespace,
+			OwnerReferences: []metav1.OwnerReference{
+				ownerRef,
+			},
+		},
+		Spec: persistentipsapi.IPAMClaimSpec{
+			Network: network.Multus.NetworkName,
 		},
 	}
 }

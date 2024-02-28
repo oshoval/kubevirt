@@ -27,6 +27,7 @@ import (
 	"strings"
 	"time"
 
+	"kubevirt.io/kubevirt/pkg/virt-controller/ipamclaims"
 	"kubevirt.io/kubevirt/pkg/virt-controller/network"
 
 	"kubevirt.io/kubevirt/pkg/virt-controller/watch/topology"
@@ -134,6 +135,8 @@ const (
 	// MigrationBackoffReason is set when an error has occured while migrating
 	// and virt-controller is backing off before retrying.
 	MigrationBackoffReason = "MigrationBackoff"
+	// FailedCreateIPAMClaimReason is set when IPAMClaim creation error has occured
+	FailedCreateIPAMClaimReason = "FailedCreateIPAMClaim"
 )
 
 const failedToRenderLaunchManifestErrFormat = "failed to render launch manifest: %v"
@@ -171,6 +174,7 @@ func NewVMIController(templateService services.TemplateService,
 		clusterConfig:     clusterConfig,
 		topologyHinter:    topologyHinter,
 		cidsMap:           newCIDsMap(),
+		ipamClaimsManager: ipamclaims.NewIPAMClaimsManager(clientset),
 	}
 
 	c.hasSynced = func() bool {
@@ -277,6 +281,7 @@ type VMIController struct {
 	clusterConfig     *virtconfig.ClusterConfig
 	cidsMap           *cidsMap
 	hasSynced         func() bool
+	ipamClaimsManager *ipamclaims.IPAMClaimsManager
 }
 
 func (c *VMIController) Run(threadiness int, stopCh <-chan struct{}) {
@@ -1240,6 +1245,10 @@ func (c *VMIController) sync(vmi *virtv1.VirtualMachineInstance, pod *k8sv1.Pod,
 			return &syncErrorImpl{fmt.Errorf(failedToRenderLaunchManifestErrFormat, err), FailedCreatePodReason}
 		}
 
+		if syncErr := c.createIPAMClaims(vmi); err != nil {
+			return syncErr
+		}
+
 		vmiKey := controller.VirtualMachineInstanceKey(vmi)
 		c.podExpectations.ExpectCreations(vmiKey, 1)
 		pod, err := c.clientset.CoreV1().Pods(vmi.GetNamespace()).Create(context.Background(), templatePod, v1.CreateOptions{})
@@ -1296,9 +1305,25 @@ func (c *VMIController) sync(vmi *virtv1.VirtualMachineInstance, pod *k8sv1.Pod,
 		}
 
 		if vmiSpecIfaces, vmiSpecNets, dynamicIfacesExist := network.CalculateInterfacesAndNetworksForMultusAnnotationUpdate(vmi); dynamicIfacesExist {
-			if err := c.updateMultusAnnotation(vmi.Namespace, vmiSpecIfaces, vmiSpecNets, pod); err != nil {
+			errMessage := fmt.Errorf("failed to hot{un}plug network interfaces for vmi [%s/%s]", vmi.GetNamespace(), vmi.GetName())
+
+			var networkToIPAMClaimParams map[string]network.IPAMClaimParams
+			if c.clusterConfig.PersistentIPsEnabled() {
+				var err error
+				networkToIPAMClaimParams, err = c.ipamClaimsManager.GetNetworkToIPAMClaimParams(
+					vmi.Namespace,
+					vmi.Name,
+					vmispec.FilterMultusNonDefaultNetworks(vmiSpecNets))
+				if err != nil {
+					return &syncErrorImpl{
+						err:    fmt.Errorf("%s: %w", errMessage, err),
+						reason: FailedHotplugSyncReason,
+					}
+				}
+			}
+			if err := c.updateMultusAnnotation(vmi.Namespace, vmiSpecIfaces, vmiSpecNets, pod, networkToIPAMClaimParams); err != nil {
 				return &syncErrorImpl{
-					err:    fmt.Errorf("failed to hot{un}plug network interfaces for vmi [%s/%s]: %w", vmi.GetNamespace(), vmi.GetName(), err),
+					err:    fmt.Errorf("%s: %w", errMessage, err),
 					reason: FailedHotplugSyncReason,
 				}
 			}
@@ -2361,12 +2386,13 @@ func (c *VMIController) getVolumePhaseMessageReason(volume *virtv1.Volume, names
 	return virtv1.VolumePending, PVCNotReadyReason, "PVC is in phase Lost"
 }
 
-func (c *VMIController) updateMultusAnnotation(namespace string, interfaces []virtv1.Interface, networks []virtv1.Network, pod *k8sv1.Pod) error {
+func (c *VMIController) updateMultusAnnotation(namespace string, interfaces []virtv1.Interface, networks []virtv1.Network, pod *k8sv1.Pod, networkToIPAMClaimParams map[string]network.IPAMClaimParams) error {
 	podAnnotations := pod.GetAnnotations()
 
 	indexedMultusStatusIfaces := network.NonDefaultMultusNetworksIndexedByIfaceName(pod)
 	networkToPodIfaceMap := namescheme.CreateNetworkNameSchemeByPodNetworkStatus(networks, indexedMultusStatusIfaces)
-	multusAnnotations, err := network.GenerateMultusCNIAnnotationFromNameScheme(namespace, interfaces, networks, networkToPodIfaceMap, c.clusterConfig)
+
+	multusAnnotations, err := network.GenerateMultusCNIAnnotationFromNameScheme(namespace, interfaces, networks, networkToPodIfaceMap, networkToIPAMClaimParams, c.clusterConfig)
 	if err != nil {
 		return err
 	}
@@ -2506,6 +2532,23 @@ func (c *VMIController) aggregateDataVolumesConditions(vmiCopy *virtv1.VirtualMa
 
 	vmiConditions := controller.NewVirtualMachineInstanceConditionManager()
 	vmiConditions.UpdateCondition(vmiCopy, &dvsReadyCondition)
+}
+
+func (c *VMIController) createIPAMClaims(vmi *virtv1.VirtualMachineInstance) syncError {
+	if c.clusterConfig.PersistentIPsEnabled() {
+		ownerRef := c.getOwnerVMReference(vmi)
+		if ownerRef == nil {
+			v1.NewControllerRef(vmi, virtv1.VirtualMachineInstanceGroupVersionKind)
+		}
+		err := c.ipamClaimsManager.CreateIPAMClaims(vmi.Namespace, vmi.Name, vmi.Spec.Domain.Devices.Interfaces, vmi.Spec.Networks, ownerRef)
+		if err != nil {
+			return &syncErrorImpl{
+				err:    fmt.Errorf(failedToRenderLaunchManifestErrFormat, err),
+				reason: FailedCreateIPAMClaimReason,
+			}
+		}
+	}
+	return nil
 }
 
 func statusOfReadyCondition(conditions []cdiv1.DataVolumeCondition) k8sv1.ConditionStatus {

@@ -655,6 +655,7 @@ func (vca *VirtControllerApp) initCommon() {
 		vca.pdbInformer,
 		vca.migrationPolicyInformer,
 		vca.resourceQuotaInformer,
+		vca.vmInformer.GetStore(),
 		vca.vmiRecorder,
 		clientSet,
 		vca.clusterConfig,

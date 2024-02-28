@@ -62,6 +62,8 @@ import (
 	traceUtils "kubevirt.io/kubevirt/pkg/util/trace"
 	virtconfig "kubevirt.io/kubevirt/pkg/virt-config"
 	"kubevirt.io/kubevirt/pkg/virt-controller/services"
+
+	ipamclaims "github.com/k8snetworkplumbingwg/ipamclaims/pkg/crd/ipamclaims/v1alpha1"
 )
 
 const (
@@ -132,6 +134,8 @@ const (
 	// MigrationBackoffReason is set when an error has occured while migrating
 	// and virt-controller is backing off before retrying.
 	MigrationBackoffReason = "MigrationBackoff"
+	// FailedCreateIPAMClaimReason is set when IPAMClaim creation error has occured
+	FailedCreateIPAMClaimReason = "FailedCreateIPAMClaim"
 )
 
 const failedToRenderLaunchManifestErrFormat = "failed to render launch manifest: %v"
@@ -1211,18 +1215,27 @@ func (c *VMIController) sync(vmi *virtv1.VirtualMachineInstance, pod *k8sv1.Pod,
 		}
 
 		var templatePod *k8sv1.Pod
-		var err error
+		hasOwnerVm := c.hasOwnerVM(vmi)
 		if isWaitForFirstConsumer {
 			log.Log.V(3).Object(vmi).Infof("Scheduling temporary pod for WaitForFirstConsumer DV")
-			templatePod, err = c.templateService.RenderLaunchManifestNoVm(vmi)
+			templatePod, err = c.templateService.RenderLaunchManifestNoVm(vmi, hasOwnerVm)
 		} else {
-			templatePod, err = c.templateService.RenderLaunchManifest(vmi)
+			templatePod, err = c.templateService.RenderLaunchManifest(vmi, hasOwnerVm)
 		}
+
 		if _, ok := err.(storagetypes.PvcNotFoundError); ok {
 			c.recorder.Eventf(vmi, k8sv1.EventTypeWarning, FailedPvcNotFoundReason, failedToRenderLaunchManifestErrFormat, err)
 			return &informalSyncError{fmt.Errorf(failedToRenderLaunchManifestErrFormat, err), FailedPvcNotFoundReason}
 		} else if err != nil {
 			return &syncErrorImpl{fmt.Errorf(failedToRenderLaunchManifestErrFormat, err), FailedCreatePodReason}
+		}
+
+		err = syncIPAMClaims(vmi, c.clientset, hasOwnerVm)
+		if err != nil {
+			return &syncErrorImpl{
+				err:    err,
+				reason: FailedCreateIPAMClaimReason,
+			}
 		}
 
 		vmiKey := controller.VirtualMachineInstanceKey(vmi)
@@ -1284,7 +1297,17 @@ func (c *VMIController) sync(vmi *virtv1.VirtualMachineInstance, pod *k8sv1.Pod,
 		}
 
 		if vmiSpecIfaces, vmiSpecNets, dynamicIfacesExist := network.CalculateInterfacesAndNetworksForMultusAnnotationUpdate(vmi); dynamicIfacesExist {
-			if err := c.updateMultusAnnotation(vmi.Namespace, vmiSpecIfaces, vmiSpecNets, pod); err != nil {
+			var networkToIPAMClaimName map[string]string
+			if c.hasOwnerVM(vmi) {
+				_, networkToIPAMClaimName, err = network.GetNetworkToResourceAndIPAMMap(c.clientset, vmi)
+				if err != nil {
+					return &syncErrorImpl{
+						err:    err,
+						reason: FailedHotplugSyncReason,
+					}
+				}
+			}
+			if err := c.updateMultusAnnotation(vmi, vmiSpecIfaces, vmiSpecNets, pod, networkToIPAMClaimName); err != nil {
 				return &syncErrorImpl{
 					err:    fmt.Errorf("failed to hot{un}plug network interfaces for vmi [%s/%s]: %w", vmi.GetNamespace(), vmi.GetName(), err),
 					reason: FailedHotplugSyncReason,
@@ -2349,12 +2372,13 @@ func (c *VMIController) getVolumePhaseMessageReason(volume *virtv1.Volume, names
 	return virtv1.VolumePending, PVCNotReadyReason, "PVC is in phase Lost"
 }
 
-func (c *VMIController) updateMultusAnnotation(namespace string, interfaces []virtv1.Interface, networks []virtv1.Network, pod *k8sv1.Pod) error {
+func (c *VMIController) updateMultusAnnotation(vmi *virtv1.VirtualMachineInstance, interfaces []virtv1.Interface, networks []virtv1.Network, pod *k8sv1.Pod, networkToIPAMClaimName map[string]string) error {
 	podAnnotations := pod.GetAnnotations()
 
 	indexedMultusStatusIfaces := network.NonDefaultMultusNetworksIndexedByIfaceName(pod)
 	networkToPodIfaceMap := namescheme.CreateNetworkNameSchemeByPodNetworkStatus(networks, indexedMultusStatusIfaces)
-	multusAnnotations, err := network.GenerateMultusCNIAnnotationFromNameScheme(namespace, interfaces, networks, networkToPodIfaceMap, c.clusterConfig)
+
+	multusAnnotations, err := network.GenerateMultusCNIAnnotationFromNameScheme(vmi.Namespace, interfaces, networks, networkToPodIfaceMap, networkToIPAMClaimName, c.clusterConfig)
 	if err != nil {
 		return err
 	}
@@ -2503,4 +2527,91 @@ func statusOfReadyCondition(conditions []cdiv1.DataVolumeCondition) k8sv1.Condit
 		}
 	}
 	return k8sv1.ConditionUnknown
+}
+
+func syncIPAMClaims(vmi *virtv1.VirtualMachineInstance, kubevirtClient kubecli.KubevirtClient, hasOwnerVm bool) error {
+	if !hasOwnerVm {
+		return nil
+	}
+
+	nonAbsentIfaces := vmispec.FilterInterfacesSpec(vmi.Spec.Domain.Devices.Interfaces, func(iface virtv1.Interface) bool {
+		return iface.State != virtv1.InterfaceStateAbsent
+	})
+	nonAbsentNets := vmispec.FilterNetworksByInterfaces(vmi.Spec.Networks, nonAbsentIfaces)
+	networkNameScheme := namescheme.CreateHashedNetworkNameScheme(nonAbsentNets)
+
+	_, networkToIPAMClaimName, err := network.GetNetworkToResourceAndIPAMMap(kubevirtClient, vmi)
+	if err != nil {
+		return err
+	}
+
+	err = createIPAMClaims(vmi, nonAbsentNets, kubevirtClient, networkToIPAMClaimName, networkNameScheme)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func createIPAMClaims(vmi *virtv1.VirtualMachineInstance, nonAbsentNets []virtv1.Network, virtClient kubecli.KubevirtClient, networkToIPAMClaimName map[string]string, networkNameScheme map[string]string) error {
+	var ownerRef v1.OwnerReference
+	refs := vmi.OwnerReferences
+	for i := range refs {
+		if refs[i].Controller != nil && *refs[i].Controller {
+			ownerRef = refs[i]
+		}
+	}
+
+	for _, network := range nonAbsentNets {
+		if network.Pod != nil {
+			continue
+		} else if network.Multus != nil && network.Multus.Default {
+			continue
+		}
+		if networkToIPAMClaimName[network.Name] == "" {
+			continue
+		}
+
+		claimName := networkToIPAMClaimName[network.Name]
+		claim, err := virtClient.IPAMClaimsClient().K8sV1alpha1().IPAMClaims(vmi.Namespace).Get(context.Background(), claimName, v1.GetOptions{})
+		if err != nil && !k8serrors.IsNotFound(err) {
+			return err
+		}
+
+		if err == nil {
+			if claim.OwnerReferences[0].UID != ownerRef.UID {
+				return fmt.Errorf("old IPAMClaim still exists for VM %s", vmi.Name)
+			}
+			continue
+		}
+
+		log.Log.Object(vmi).Infof("about to create IPAM Claim for %q", claimName)
+		_, err = virtClient.IPAMClaimsClient().K8sV1alpha1().IPAMClaims(vmi.Namespace).Create(
+			context.Background(),
+			createIPAMClaim(vmi.Namespace, ownerRef, claimName, network, networkNameScheme[network.Name]),
+			v1.CreateOptions{},
+		)
+
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func createIPAMClaim(namespace string, ownerRef v1.OwnerReference, claimName string, network virtv1.Network, interfaceName string) *ipamclaims.IPAMClaim {
+	return &ipamclaims.IPAMClaim{
+		ObjectMeta: v1.ObjectMeta{
+			Name:      claimName,
+			Namespace: namespace,
+			OwnerReferences: []v1.OwnerReference{
+				ownerRef,
+			},
+		},
+		Spec: ipamclaims.IPAMClaimSpec{
+			Network:   network.Multus.NetworkName,
+			Interface: interfaceName,
+		},
+	}
 }

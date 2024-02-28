@@ -67,6 +67,7 @@ go_library(
         "//staging/src/kubevirt.io/client-go/util:go_default_library",
         "//vendor/github.com/emicklei/go-restful/v3:go_default_library",
         "//vendor/github.com/google/uuid:go_default_library",
+        "//vendor/github.com/k8snetworkplumbingwg/ipamclaims/pkg/crd/ipamclaims/v1alpha1:go_default_library",
         "//vendor/github.com/k8snetworkplumbingwg/network-attachment-definition-client/pkg/apis/k8s.cni.cncf.io/v1:go_default_library",
         "//vendor/github.com/kubernetes-csi/external-snapshotter/client/v4/apis/volumesnapshot/v1:go_default_library",
         "//vendor/github.com/opencontainers/selinux/go-selinux:go_default_library",

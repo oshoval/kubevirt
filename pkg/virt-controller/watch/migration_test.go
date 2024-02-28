@@ -75,6 +75,7 @@ var _ = Describe("Migration watcher", func() {
 	var migrationSource *framework.FakeControllerSource
 	var vmiSource *framework.FakeControllerSource
 	var podSource *framework.FakeControllerSource
+	var vmInformer cache.SharedIndexInformer
 	var vmiInformer cache.SharedIndexInformer
 	var podInformer cache.SharedIndexInformer
 	var migrationInformer cache.SharedIndexInformer
@@ -270,6 +271,7 @@ var _ = Describe("Migration watcher", func() {
 	}
 
 	syncCaches := func(stop chan struct{}) {
+		go vmInformer.Run(stop)
 		go vmiInformer.Run(stop)
 		go podInformer.Run(stop)
 		go migrationInformer.Run(stop)
@@ -280,6 +282,7 @@ var _ = Describe("Migration watcher", func() {
 		go namespaceInformer.Run(stop)
 
 		Expect(cache.WaitForCacheSync(stop,
+			vmInformer.HasSynced,
 			vmiInformer.HasSynced,
 			podInformer.HasSynced,
 			migrationInformer.HasSynced,
@@ -304,6 +307,7 @@ var _ = Describe("Migration watcher", func() {
 			pdbInformer,
 			migrationPolicyInformer,
 			resourceQuotaInformer,
+			vmInformer.GetStore(),
 			recorder,
 			virtClient,
 			config,
@@ -321,6 +325,7 @@ var _ = Describe("Migration watcher", func() {
 		migrationInterface = kubecli.NewMockVirtualMachineInstanceMigrationInterface(ctrl)
 		vmiInterface = kubecli.NewMockVirtualMachineInstanceInterface(ctrl)
 
+		vmInformer, _ = testutils.NewFakeInformerFor(&virtv1.VirtualMachine{})
 		vmiInformer, vmiSource = testutils.NewFakeInformerFor(&virtv1.VirtualMachineInstance{})
 		migrationInformer, migrationSource = testutils.NewFakeInformerFor(&virtv1.VirtualMachineInstanceMigration{})
 		podInformer, podSource = testutils.NewFakeInformerFor(&k8sv1.Pod{})

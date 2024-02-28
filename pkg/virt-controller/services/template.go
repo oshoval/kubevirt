@@ -130,11 +130,11 @@ const (
 const customSELinuxType = "virt_launcher.process"
 
 type TemplateService interface {
-	RenderMigrationManifest(vmi *v1.VirtualMachineInstance, sourcePod *k8sv1.Pod) (*k8sv1.Pod, error)
-	RenderLaunchManifest(vmi *v1.VirtualMachineInstance) (*k8sv1.Pod, error)
+	RenderMigrationManifest(vmi *v1.VirtualMachineInstance, sourcePod *k8sv1.Pod, hasOwnerVm bool) (*k8sv1.Pod, error)
+	RenderLaunchManifest(vmi *v1.VirtualMachineInstance, hasOwnerVm bool) (*k8sv1.Pod, error)
 	RenderHotplugAttachmentPodTemplate(volume []*v1.Volume, ownerPod *k8sv1.Pod, vmi *v1.VirtualMachineInstance, claimMap map[string]*k8sv1.PersistentVolumeClaim, tempPod bool) (*k8sv1.Pod, error)
 	RenderHotplugAttachmentTriggerPodTemplate(volume *v1.Volume, ownerPod *k8sv1.Pod, vmi *v1.VirtualMachineInstance, pvcName string, isBlock bool, tempPod bool) (*k8sv1.Pod, error)
-	RenderLaunchManifestNoVm(*v1.VirtualMachineInstance) (*k8sv1.Pod, error)
+	RenderLaunchManifestNoVm(vmi *v1.VirtualMachineInstance, hasOwnerVm bool) (*k8sv1.Pod, error)
 	RenderExporterManifest(vmExport *exportv1.VirtualMachineExport, namePrefix string) *k8sv1.Pod
 	GetLauncherImage() string
 	IsPPC64() bool
@@ -253,21 +253,26 @@ func (t *templateService) GetLauncherImage() string {
 	return t.launcherImage
 }
 
-func (t *templateService) RenderLaunchManifestNoVm(vmi *v1.VirtualMachineInstance) (*k8sv1.Pod, error) {
-	return t.renderLaunchManifest(vmi, nil, true)
+func (t *templateService) RenderLaunchManifestNoVm(vmi *v1.VirtualMachineInstance, hasOwnerVm bool) (*k8sv1.Pod, error) {
+	return t.renderLaunchManifest(vmi, nil, true, hasOwnerVm)
 }
 
-func (t *templateService) RenderMigrationManifest(vmi *v1.VirtualMachineInstance, pod *k8sv1.Pod) (*k8sv1.Pod, error) {
+func (t *templateService) RenderMigrationManifest(vmi *v1.VirtualMachineInstance, pod *k8sv1.Pod, hasOwnerVm bool) (*k8sv1.Pod, error) {
 	imageIDs := containerdisk.ExtractImageIDsFromSourcePod(vmi, pod)
-	podManifest, err := t.renderLaunchManifest(vmi, imageIDs, false)
+	podManifest, err := t.renderLaunchManifest(vmi, imageIDs, false, hasOwnerVm)
 	if err != nil {
 		return nil, err
 	}
 
 	if namescheme.PodHasOrdinalInterfaceName(network.NonDefaultMultusNetworksIndexedByIfaceName(pod)) {
 		ordinalNameScheme := namescheme.CreateOrdinalNetworkNameScheme(vmi.Spec.Networks)
+		_, networkToIPAMClaimName, err := network.GetNetworkToResourceAndIPAMMap(t.virtClient, vmi)
+		if err != nil {
+			return nil, err
+		}
+
 		multusNetworksAnnotation, err := network.GenerateMultusCNIAnnotationFromNameScheme(
-			vmi.Namespace, vmi.Spec.Domain.Devices.Interfaces, vmi.Spec.Networks, ordinalNameScheme, t.clusterConfig)
+			vmi.Namespace, vmi.Spec.Domain.Devices.Interfaces, vmi.Spec.Networks, ordinalNameScheme, networkToIPAMClaimName, t.clusterConfig)
 		if err != nil {
 			return nil, err
 		}
@@ -277,8 +282,8 @@ func (t *templateService) RenderMigrationManifest(vmi *v1.VirtualMachineInstance
 	return podManifest, err
 }
 
-func (t *templateService) RenderLaunchManifest(vmi *v1.VirtualMachineInstance) (*k8sv1.Pod, error) {
-	return t.renderLaunchManifest(vmi, nil, false)
+func (t *templateService) RenderLaunchManifest(vmi *v1.VirtualMachineInstance, hasOwnerVm bool) (*k8sv1.Pod, error) {
+	return t.renderLaunchManifest(vmi, nil, false, hasOwnerVm)
 }
 
 func (t *templateService) IsPPC64() bool {
@@ -313,7 +318,7 @@ func computePodSecurityContext(vmi *v1.VirtualMachineInstance, seccomp *k8sv1.Se
 	return psc
 }
 
-func (t *templateService) renderLaunchManifest(vmi *v1.VirtualMachineInstance, imageIDs map[string]string, tempPod bool) (*k8sv1.Pod, error) {
+func (t *templateService) renderLaunchManifest(vmi *v1.VirtualMachineInstance, imageIDs map[string]string, tempPod bool, hasOwnerVm bool) (*k8sv1.Pod, error) {
 	precond.MustNotBeNil(vmi)
 	domain := precond.MustNotBeEmpty(vmi.GetObjectMeta().GetName())
 	namespace := precond.MustNotBeEmpty(vmi.GetObjectMeta().GetNamespace())
@@ -341,7 +346,7 @@ func (t *templateService) renderLaunchManifest(vmi *v1.VirtualMachineInstance, i
 	gracePeriodSeconds = gracePeriodSeconds + int64(15)
 	gracePeriodKillAfter := gracePeriodSeconds + int64(15)
 
-	networkToResourceMap, err := network.GetNetworkToResourceMap(t.virtClient, vmi)
+	networkToResourceMap, networkToIPAMClaimName, err := network.GetNetworkToResourceAndIPAMMap(t.virtClient, vmi)
 	if err != nil {
 		return nil, err
 	}
@@ -516,7 +521,7 @@ func (t *templateService) renderLaunchManifest(vmi *v1.VirtualMachineInstance, i
 		containers = append(containers, sidecarContainer)
 	}
 
-	podAnnotations, err := generatePodAnnotations(vmi, t.clusterConfig)
+	podAnnotations, err := generatePodAnnotations(vmi, networkToIPAMClaimName, t.clusterConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -1312,7 +1317,7 @@ func generateContainerSecurityContext(selinuxType string, container *k8sv1.Conta
 	container.SecurityContext.SELinuxOptions.Level = "s0"
 }
 
-func generatePodAnnotations(vmi *v1.VirtualMachineInstance, config *virtconfig.ClusterConfig) (map[string]string, error) {
+func generatePodAnnotations(vmi *v1.VirtualMachineInstance, networkToIPAMClaimName map[string]string, config *virtconfig.ClusterConfig) (map[string]string, error) {
 	annotationsSet := map[string]string{
 		v1.DomainAnnotation: vmi.GetObjectMeta().GetName(),
 	}
@@ -1326,7 +1331,8 @@ func generatePodAnnotations(vmi *v1.VirtualMachineInstance, config *virtconfig.C
 		return iface.State != v1.InterfaceStateAbsent
 	})
 	nonAbsentNets := vmispec.FilterNetworksByInterfaces(vmi.Spec.Networks, nonAbsentIfaces)
-	multusAnnotation, err := network.GenerateMultusCNIAnnotation(vmi.Namespace, nonAbsentIfaces, nonAbsentNets, config)
+
+	multusAnnotation, err := network.GenerateMultusCNIAnnotation(vmi.Namespace, nonAbsentIfaces, nonAbsentNets, networkToIPAMClaimName, config)
 	if err != nil {
 		return nil, err
 	}

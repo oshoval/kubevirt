@@ -161,6 +161,7 @@ var _ = Describe("Application", func() {
 			pdbInformer,
 			migrationPolicyInformer,
 			resourceQuotaInformer,
+			vmInformer.GetStore(),
 			recorder,
 			virtClient,
 			config,

@@ -23,13 +23,13 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+
 	v1 "kubevirt.io/api/core/v1"
 
 	"kubevirt.io/kubevirt/pkg/libvmi"
 	"kubevirt.io/kubevirt/pkg/virt-controller/network"
-
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime/schema"
 
 	networkv1 "github.com/k8snetworkplumbingwg/network-attachment-definition-client/pkg/apis/k8s.cni.cncf.io/v1"
 
@@ -104,6 +104,22 @@ var _ = Describe("ExtractNetworkToResourceMap", func() {
 	})
 })
 
+var _ = Describe("GetNamespaceAndNetworkName", func() {
+	It("should return vmi namespace when namespace is implicit", func() {
+		vmi := &v1.VirtualMachineInstance{ObjectMeta: metav1.ObjectMeta{Name: "testvmi", Namespace: "testns"}}
+		namespace, networkName := network.GetNamespaceAndNetworkName(vmi.Namespace, "testnet")
+		Expect(namespace).To(Equal("testns"))
+		Expect(networkName).To(Equal("testnet"))
+	})
+
+	It("should return namespace from networkName when namespace is explicit", func() {
+		vmi := &v1.VirtualMachineInstance{ObjectMeta: metav1.ObjectMeta{Name: "testvmi", Namespace: "testns"}}
+		namespace, networkName := network.GetNamespaceAndNetworkName(vmi.Namespace, "otherns/testnet")
+		Expect(namespace).To(Equal("otherns"))
+		Expect(networkName).To(Equal("testnet"))
+	})
+})
+
 func createNADs(networkClient *fakenetworkclient.Clientset, namespace string, networks []v1.Network) error {
 	gvr := schema.GroupVersionResource{
 		Group:    "k8s.cni.cncf.io",
@@ -128,19 +144,3 @@ func createNADs(networkClient *fakenetworkclient.Clientset, namespace string, ne
 
 	return nil
 }
-
-var _ = Describe("GetNamespaceAndNetworkName", func() {
-	It("should return vmi namespace when namespace is implicit", func() {
-		vmi := &v1.VirtualMachineInstance{ObjectMeta: metav1.ObjectMeta{Name: "testvmi", Namespace: "testns"}}
-		namespace, networkName := network.GetNamespaceAndNetworkName(vmi.Namespace, "testnet")
-		Expect(namespace).To(Equal("testns"))
-		Expect(networkName).To(Equal("testnet"))
-	})
-
-	It("should return namespace from networkName when namespace is explicit", func() {
-		vmi := &v1.VirtualMachineInstance{ObjectMeta: metav1.ObjectMeta{Name: "testvmi", Namespace: "testns"}}
-		namespace, networkName := network.GetNamespaceAndNetworkName(vmi.Namespace, "otherns/testnet")
-		Expect(namespace).To(Equal("otherns"))
-		Expect(networkName).To(Equal("testnet"))
-	})
-})

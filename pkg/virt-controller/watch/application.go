@@ -631,6 +631,7 @@ func (vca *VirtControllerApp) initCommon() {
 		vca.cdiConfigInformer,
 		vca.clusterConfig,
 		topologyHinter,
+		WithIPAMClaimManager(),
 	)
 	if err != nil {
 		panic(err)

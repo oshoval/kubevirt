@@ -154,6 +154,8 @@ ${KUBEVIRT_DIR}/tools/resource-generator/resource-generator --type=kv-cr --names
     --featureGates='{{.FeatureGates}}' --infraReplicas='{{.InfraReplicas}}' >${ResourceDir}/kubevirt-cr.yaml.in
 ${KUBEVIRT_DIR}/tools/resource-generator/resource-generator --type=operator-rbac --namespace='{{.Namespace}}' >${ResourceDir}/rbac-operator.authorization.k8s.yaml.in
 
+cat ${KUBEVIRT_DIR}/manifests/crds/k8s.cni.cncf.io_ipamclaims.yaml.in >>${ResourceDir}/kv-resource.yaml
+
 # used for Image fields in manifests
 function getVersion() {
     echo "{{if $1}}@{{$1}}{{else}}:{{.DockerTag}}{{end}}"

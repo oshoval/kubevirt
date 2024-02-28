@@ -269,9 +269,13 @@ func (t *templateService) RenderMigrationManifest(vmi *v1.VirtualMachineInstance
 
 	if namescheme.PodHasOrdinalInterfaceName(network.NonDefaultMultusNetworksIndexedByIfaceName(pod)) {
 		ordinalNameScheme := namescheme.CreateOrdinalNetworkNameScheme(vmi.Spec.Networks)
-		// TODO!!! need the persistentIPNetworks map here, renderLaunchManifest calculates it
+		_, persistentIPNetworks, err := network.GetNetworkToResourceMap(t.virtClient, vmi)
+		if err != nil {
+			return nil, err
+		}
+
 		multusNetworksAnnotation, err := network.GenerateMultusCNIAnnotationFromNameScheme(
-			vmi.Namespace, vmi.Name, vmi.Spec.Domain.Devices.Interfaces, vmi.Spec.Networks, ordinalNameScheme, map[string]bool{}, t.clusterConfig)
+			vmi.Namespace, vmi.Name, vmi.Spec.Domain.Devices.Interfaces, vmi.Spec.Networks, ordinalNameScheme, persistentIPNetworks, t.clusterConfig)
 		if err != nil {
 			return nil, err
 		}

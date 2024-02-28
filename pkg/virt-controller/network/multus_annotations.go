@@ -56,18 +56,23 @@ func (mnap multusNetworkAnnotationPool) toString() (string, error) {
 	return string(multusNetworksAnnotation), nil
 }
 
-func GenerateMultusCNIAnnotation(namespace string, interfaces []v1.Interface, networks []v1.Network, config *virtconfig.ClusterConfig) (string, error) {
-	return GenerateMultusCNIAnnotationFromNameScheme(namespace, interfaces, networks, namescheme.CreateHashedNetworkNameScheme(networks), config)
+func GenerateMultusCNIAnnotation(namespace string, interfaces []v1.Interface, networks []v1.Network, networkToIPAMClaimParams map[string]IPAMClaimParams, config *virtconfig.ClusterConfig) (string, error) {
+	return GenerateMultusCNIAnnotationFromNameScheme(namespace, interfaces, networks, namescheme.CreateHashedNetworkNameScheme(networks), networkToIPAMClaimParams, config)
 }
 
-func GenerateMultusCNIAnnotationFromNameScheme(namespace string, interfaces []v1.Interface, networks []v1.Network, networkNameScheme map[string]string, config *virtconfig.ClusterConfig) (string, error) {
+func GenerateMultusCNIAnnotationFromNameScheme(namespace string, interfaces []v1.Interface, networks []v1.Network, networkNameScheme map[string]string, networkToIPAMClaimParams map[string]IPAMClaimParams, config *virtconfig.ClusterConfig) (string, error) {
 	multusNetworkAnnotationPool := multusNetworkAnnotationPool{}
 
+	persistentIPsEnabled := config.PersistentIPsEnabled()
 	for _, network := range networks {
 		if vmispec.IsSecondaryMultusNetwork(network) {
+			claimName := networkToIPAMClaimParams[network.Name].claimName
+			if claimName != "" && !persistentIPsEnabled {
+				return "", fmt.Errorf("failed FG validation: allowPersistentIPs requested but PersistentIPs is disabled")
+			}
 			podInterfaceName := networkNameScheme[network.Name]
 			multusNetworkAnnotationPool.add(
-				newMultusAnnotationData(namespace, interfaces, network, podInterfaceName))
+				newMultusAnnotationDataWithIPAMClaim(namespace, interfaces, network, podInterfaceName, claimName))
 		}
 
 		if config != nil && config.NetworkBindingPlugingsEnabled() {
@@ -112,6 +117,12 @@ func newBindingPluginMultusAnnotationData(kvConfig *v1.KubeVirtConfiguration, pl
 			cniArgNetworkName: networkName,
 		},
 	}, nil
+}
+
+func newMultusAnnotationDataWithIPAMClaim(namespace string, interfaces []v1.Interface, network v1.Network, podInterfaceName string, ipamClaimName string) networkv1.NetworkSelectionElement {
+	networkSelectionElement := newMultusAnnotationData(namespace, interfaces, network, podInterfaceName)
+	networkSelectionElement.IPAMClaimReference = ipamClaimName
+	return networkSelectionElement
 }
 
 func newMultusAnnotationData(namespace string, interfaces []v1.Interface, network v1.Network, podInterfaceName string) networkv1.NetworkSelectionElement {

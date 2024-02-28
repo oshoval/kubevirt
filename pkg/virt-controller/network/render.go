@@ -44,7 +44,7 @@ func GetNetworkAttachmentDefinitionByName(k8sCniCncfIoV1 k8scnicncfiov1.K8sCniCn
 	nadMap := map[string]*networkv1.NetworkAttachmentDefinition{}
 	for _, network := range multusNetworks {
 		if !vmispec.IsMultusNetwork(network) {
-			return nil, fmt.Errorf("failed asserting network is multus %s", network.Name)
+			return nil, fmt.Errorf("failed asserting network (%s) is multus", network.Name)
 		}
 		ns, networkName := GetNamespaceAndNetworkName(namespace, network.Multus.NetworkName)
 		nad, err := k8sCniCncfIoV1.NetworkAttachmentDefinitions(ns).Get(context.Background(), networkName, metav1.GetOptions{})

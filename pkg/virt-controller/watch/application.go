@@ -647,6 +647,7 @@ func (vca *VirtControllerApp) initCommon() {
 	}
 	vca.migrationController, err = NewMigrationController(
 		vca.templateService,
+		vca.vmInformer,
 		vca.vmiInformer,
 		vca.kvPodInformer,
 		vca.migrationInformer,

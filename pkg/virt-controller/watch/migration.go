@@ -95,6 +95,7 @@ type MigrationController struct {
 	templateService         services.TemplateService
 	clientset               kubecli.KubevirtClient
 	Queue                   workqueue.RateLimitingInterface
+	vmInformer              cache.SharedIndexInformer
 	vmiInformer             cache.SharedIndexInformer
 	podInformer             cache.SharedIndexInformer
 	migrationInformer       cache.SharedIndexInformer
@@ -119,6 +120,7 @@ type MigrationController struct {
 }
 
 func NewMigrationController(templateService services.TemplateService,
+	vmInformer cache.SharedIndexInformer,
 	vmiInformer cache.SharedIndexInformer,
 	podInformer cache.SharedIndexInformer,
 	migrationInformer cache.SharedIndexInformer,
@@ -135,6 +137,7 @@ func NewMigrationController(templateService services.TemplateService,
 	c := &MigrationController{
 		templateService:         templateService,
 		Queue:                   workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "virt-controller-migration"),
+		vmInformer:              vmInformer,
 		vmiInformer:             vmiInformer,
 		podInformer:             podInformer,
 		migrationInformer:       migrationInformer,
@@ -648,7 +651,7 @@ func setTargetPodSELinuxLevel(pod *k8sv1.Pod, vmiSeContext string) error {
 }
 
 func (c *MigrationController) createTargetPod(migration *virtv1.VirtualMachineInstanceMigration, vmi *virtv1.VirtualMachineInstance, sourcePod *k8sv1.Pod) error {
-	templatePod, err := c.templateService.RenderMigrationManifest(vmi, sourcePod)
+	templatePod, err := c.templateService.RenderMigrationManifest(vmi, sourcePod, c.hasOwnerVM(vmi))
 	if err != nil {
 		return fmt.Errorf("failed to render launch manifest: %v", err)
 	}
@@ -1879,6 +1882,21 @@ func (c *MigrationController) alertIfHostModelIsUnschedulable(vmi *virtv1.Virtua
 		c.recorder.Eventf(vmi, k8sv1.EventTypeWarning, NoSuitableNodesForHostModelMigration, warningMsg)
 		log.Log.Object(vmi).Warning(warningMsg)
 	}
+}
+
+func (c *MigrationController) hasOwnerVM(vmi *virtv1.VirtualMachineInstance) bool {
+	controllerRef := v1.GetControllerOf(vmi)
+	if controllerRef == nil || controllerRef.Kind != virtv1.VirtualMachineGroupVersionKind.Kind {
+		return false
+	}
+
+	obj, exists, _ := c.vmInformer.GetStore().GetByKey(vmi.Namespace + "/" + controllerRef.Name)
+	if !exists {
+		return false
+	}
+
+	ownerVM := obj.(*virtv1.VirtualMachine)
+	return controllerRef.UID == ownerVM.UID
 }
 
 func prepareNodeSelectorForHostCpuModel(node *k8sv1.Node, pod *k8sv1.Pod, sourcePod *k8sv1.Pod) error {

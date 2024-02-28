@@ -56,19 +56,23 @@ func (mnap multusNetworkAnnotationPool) toString() (string, error) {
 	return string(multusNetworksAnnotation), nil
 }
 
-func GenerateMultusCNIAnnotation(namespace string, vmName string, interfaces []v1.Interface, networks []v1.Network, config *virtconfig.ClusterConfig) (string, error) {
-	return GenerateMultusCNIAnnotationFromNameScheme(namespace, vmName, interfaces, networks, namescheme.CreateHashedNetworkNameScheme(networks), config)
+// TODO consider removing
+func GenerateMultusCNIAnnotation(namespace string, vmName string, interfaces []v1.Interface, networks []v1.Network, persistentIPNetworks map[string]bool, config *virtconfig.ClusterConfig) (string, error) {
+	return GenerateMultusCNIAnnotationFromNameScheme(namespace, vmName, interfaces, networks, namescheme.CreateHashedNetworkNameScheme(networks), persistentIPNetworks, config)
 }
 
-func GenerateMultusCNIAnnotationFromNameScheme(namespace string, vmName string, interfaces []v1.Interface, networks []v1.Network, networkNameScheme map[string]string, config *virtconfig.ClusterConfig) (string, error) {
+func GenerateMultusCNIAnnotationFromNameScheme(namespace string, vmName string, interfaces []v1.Interface, networks []v1.Network, networkNameScheme map[string]string, persistentIPNetworks map[string]bool, config *virtconfig.ClusterConfig) (string, error) {
 	multusNetworkAnnotationPool := multusNetworkAnnotationPool{}
 
 	for _, network := range networks {
 		if vmispec.IsSecondaryMultusNetwork(network) {
 			podInterfaceName := networkNameScheme[network.Name]
-			// maybe need to pass down here the map and if the condition is met to take the value
+			vmRef := ""
+			if persistentIPNetworks[network.Name] {
+				vmRef = vmName
+			}
 			multusNetworkAnnotationPool.add(
-				newMultusAnnotationData(namespace, interfaces, network, podInterfaceName, vmName))
+				newMultusAnnotationData(namespace, interfaces, network, podInterfaceName, vmRef))
 		}
 
 		if config != nil && config.NetworkBindingPlugingsEnabled() {
@@ -122,12 +126,16 @@ func newMultusAnnotationData(namespace string, interfaces []v1.Interface, networ
 	if multusIface != nil {
 		multusIfaceMac = multusIface.MacAddress
 	}
+	ipamClaimReference := ""
+	if vmName != "" {
+		ipamClaimReference = fmt.Sprintf("%s.%s", vmName, network.Name)
+	}
 	return networkv1.NetworkSelectionElement{
 		InterfaceRequest:   podInterfaceName,
 		MacRequest:         multusIfaceMac,
 		Namespace:          namespace,
 		Name:               networkName,
-		IPAMClaimReference: fmt.Sprintf("%s.%s", vmName, network.Name),
+		IPAMClaimReference: ipamClaimReference,
 	}
 }
 

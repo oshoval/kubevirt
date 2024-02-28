@@ -1217,9 +1217,9 @@ func (c *VMIController) sync(vmi *virtv1.VirtualMachineInstance, pod *k8sv1.Pod,
 		var err error
 		if isWaitForFirstConsumer {
 			log.Log.V(3).Object(vmi).Infof("Scheduling temporary pod for WaitForFirstConsumer DV")
-			templatePod, err = c.templateService.RenderLaunchManifestNoVm(vmi)
+			templatePod, err = c.templateService.RenderLaunchManifestNoVm(vmi, c.hasOwnerVM(vmi))
 		} else {
-			templatePod, err = c.templateService.RenderLaunchManifest(vmi)
+			templatePod, err = c.templateService.RenderLaunchManifest(vmi, c.hasOwnerVM(vmi))
 		}
 		if _, ok := err.(storagetypes.PvcNotFoundError); ok {
 			c.recorder.Eventf(vmi, k8sv1.EventTypeWarning, FailedPvcNotFoundReason, failedToRenderLaunchManifestErrFormat, err)
@@ -2357,7 +2357,8 @@ func (c *VMIController) updateMultusAnnotation(namespace string, vmName string, 
 
 	indexedMultusStatusIfaces := network.NonDefaultMultusNetworksIndexedByIfaceName(pod)
 	networkToPodIfaceMap := namescheme.CreateNetworkNameSchemeByPodNetworkStatus(networks, indexedMultusStatusIfaces)
-	multusAnnotations, err := network.GenerateMultusCNIAnnotationFromNameScheme(namespace, vmName, interfaces, networks, networkToPodIfaceMap, c.clusterConfig)
+	// TODO!!! need the persistentIPNetworks map here
+	multusAnnotations, err := network.GenerateMultusCNIAnnotationFromNameScheme(namespace, vmName, interfaces, networks, networkToPodIfaceMap, map[string]bool{}, c.clusterConfig)
 	if err != nil {
 		return err
 	}

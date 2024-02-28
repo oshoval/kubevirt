@@ -1120,11 +1120,11 @@ var _ = Describe("Template", func() {
 						},
 					}
 
-					sourcePod, err := svc.RenderLaunchManifest(vmi)
+					sourcePod, err := svc.RenderLaunchManifest(vmi, false)
 					Expect(err).ToNot(HaveOccurred())
 					sourcePod.ObjectMeta.Annotations[networkv1.NetworkStatusAnnot] = migrationSourcePodNetworksAnnotation[networkv1.NetworkStatusAnnot]
 
-					targetPod, err := svc.RenderMigrationManifest(vmi, sourcePod)
+					targetPod, err := svc.RenderMigrationManifest(vmi, sourcePod, false)
 					Expect(err).ToNot(HaveOccurred())
 
 					Expect(targetPod.Annotations[MultusNetworksAnnotation]).To(MatchJSON(expectedTargetPodMultusNetworksAnnotation[MultusNetworksAnnotation]))

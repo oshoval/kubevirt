@@ -133,11 +133,11 @@ const (
 const customSELinuxType = "virt_launcher.process"
 
 type TemplateService interface {
-	RenderMigrationManifest(vmi *v1.VirtualMachineInstance, sourcePod *k8sv1.Pod) (*k8sv1.Pod, error)
-	RenderLaunchManifest(vmi *v1.VirtualMachineInstance) (*k8sv1.Pod, error)
+	RenderMigrationManifest(vmi *v1.VirtualMachineInstance, sourcePod *k8sv1.Pod, hasOwnerVm bool) (*k8sv1.Pod, error)
+	RenderLaunchManifest(vmi *v1.VirtualMachineInstance, hasOwnerVm bool) (*k8sv1.Pod, error)
 	RenderHotplugAttachmentPodTemplate(volume []*v1.Volume, ownerPod *k8sv1.Pod, vmi *v1.VirtualMachineInstance, claimMap map[string]*k8sv1.PersistentVolumeClaim, tempPod bool) (*k8sv1.Pod, error)
 	RenderHotplugAttachmentTriggerPodTemplate(volume *v1.Volume, ownerPod *k8sv1.Pod, vmi *v1.VirtualMachineInstance, pvcName string, isBlock bool, tempPod bool) (*k8sv1.Pod, error)
-	RenderLaunchManifestNoVm(*v1.VirtualMachineInstance) (*k8sv1.Pod, error)
+	RenderLaunchManifestNoVm(vmi *v1.VirtualMachineInstance, hasOwnerVm bool) (*k8sv1.Pod, error)
 	RenderExporterManifest(vmExport *exportv1.VirtualMachineExport, namePrefix string) *k8sv1.Pod
 	GetLauncherImage() string
 	IsPPC64() bool
@@ -256,21 +256,22 @@ func (t *templateService) GetLauncherImage() string {
 	return t.launcherImage
 }
 
-func (t *templateService) RenderLaunchManifestNoVm(vmi *v1.VirtualMachineInstance) (*k8sv1.Pod, error) {
-	return t.renderLaunchManifest(vmi, nil, true)
+func (t *templateService) RenderLaunchManifestNoVm(vmi *v1.VirtualMachineInstance, hasOwnerVm bool) (*k8sv1.Pod, error) {
+	return t.renderLaunchManifest(vmi, nil, true, hasOwnerVm)
 }
 
-func (t *templateService) RenderMigrationManifest(vmi *v1.VirtualMachineInstance, pod *k8sv1.Pod) (*k8sv1.Pod, error) {
+func (t *templateService) RenderMigrationManifest(vmi *v1.VirtualMachineInstance, pod *k8sv1.Pod, hasOwnerVm bool) (*k8sv1.Pod, error) {
 	imageIDs := containerdisk.ExtractImageIDsFromSourcePod(vmi, pod)
-	podManifest, err := t.renderLaunchManifest(vmi, imageIDs, false)
+	podManifest, err := t.renderLaunchManifest(vmi, imageIDs, false, hasOwnerVm)
 	if err != nil {
 		return nil, err
 	}
 
 	if namescheme.PodHasOrdinalInterfaceName(network.NonDefaultMultusNetworksIndexedByIfaceName(pod)) {
 		ordinalNameScheme := namescheme.CreateOrdinalNetworkNameScheme(vmi.Spec.Networks)
+		// TODO!!! need the persistentIPNetworks map here, renderLaunchManifest calculates it
 		multusNetworksAnnotation, err := network.GenerateMultusCNIAnnotationFromNameScheme(
-			vmi.Namespace, vmi.Name, vmi.Spec.Domain.Devices.Interfaces, vmi.Spec.Networks, ordinalNameScheme, t.clusterConfig)
+			vmi.Namespace, vmi.Name, vmi.Spec.Domain.Devices.Interfaces, vmi.Spec.Networks, ordinalNameScheme, map[string]bool{}, t.clusterConfig)
 		if err != nil {
 			return nil, err
 		}
@@ -280,8 +281,8 @@ func (t *templateService) RenderMigrationManifest(vmi *v1.VirtualMachineInstance
 	return podManifest, err
 }
 
-func (t *templateService) RenderLaunchManifest(vmi *v1.VirtualMachineInstance) (*k8sv1.Pod, error) {
-	return t.renderLaunchManifest(vmi, nil, false)
+func (t *templateService) RenderLaunchManifest(vmi *v1.VirtualMachineInstance, hasOwnerVm bool) (*k8sv1.Pod, error) {
+	return t.renderLaunchManifest(vmi, nil, false, hasOwnerVm)
 }
 
 func (t *templateService) IsPPC64() bool {
@@ -316,7 +317,7 @@ func computePodSecurityContext(vmi *v1.VirtualMachineInstance, seccomp *k8sv1.Se
 	return psc
 }
 
-func (t *templateService) renderLaunchManifest(vmi *v1.VirtualMachineInstance, imageIDs map[string]string, tempPod bool) (*k8sv1.Pod, error) {
+func (t *templateService) renderLaunchManifest(vmi *v1.VirtualMachineInstance, imageIDs map[string]string, tempPod bool, hasOwnerVm bool) (*k8sv1.Pod, error) {
 	precond.MustNotBeNil(vmi)
 	domain := precond.MustNotBeEmpty(vmi.GetObjectMeta().GetName())
 	namespace := precond.MustNotBeEmpty(vmi.GetObjectMeta().GetNamespace())
@@ -344,8 +345,7 @@ func (t *templateService) renderLaunchManifest(vmi *v1.VirtualMachineInstance, i
 	gracePeriodSeconds = gracePeriodSeconds + int64(15)
 	gracePeriodKillAfter := gracePeriodSeconds + int64(15)
 
-	//persistentIPNetworks
-	networkToResourceMap, _, err := network.GetNetworkToResourceMap(t.virtClient, vmi)
+	networkToResourceMap, persistentIPNetworks, err := network.GetNetworkToResourceMap(t.virtClient, vmi)
 	if err != nil {
 		return nil, err
 	}
@@ -520,7 +520,17 @@ func (t *templateService) renderLaunchManifest(vmi *v1.VirtualMachineInstance, i
 		containers = append(containers, sidecarContainer)
 	}
 
-	podAnnotations, err := generatePodAnnotations(vmi, t.clusterConfig)
+	nonAbsentIfaces := vmispec.FilterInterfacesSpec(vmi.Spec.Domain.Devices.Interfaces, func(iface v1.Interface) bool {
+		return iface.State != v1.InterfaceStateAbsent
+	})
+	nonAbsentNets := vmispec.FilterNetworksByInterfaces(vmi.Spec.Networks, nonAbsentIfaces)
+	networkNameScheme := namescheme.CreateHashedNetworkNameScheme(nonAbsentNets)
+
+	vmRef := ""
+	if hasOwnerVm {
+		vmRef = vmi.Name // change to vm.Name
+	}
+	podAnnotations, err := generatePodAnnotations(vmi, vmRef, nonAbsentIfaces, nonAbsentNets, networkNameScheme, persistentIPNetworks, t.clusterConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -529,28 +539,10 @@ func (t *templateService) renderLaunchManifest(vmi *v1.VirtualMachineInstance, i
 		podAnnotations[v1.EphemeralProvisioningObject] = "true"
 	}
 
-	// augment / create claims only if hasOwnerVM
-	// TODO all is need to be done only if hasOwnerVM()
-
-	// can we get the vm form the vmi owner ref?
-	// TODO used vmi.Name instead of vm.name
-	for _, network := range vmi.Spec.Networks {
-		if network.Pod != nil {
-			continue
-		} else if network.Multus != nil && network.Multus.Default {
-			continue
-		}
-
-		claimName := fmt.Sprintf("%s.%s", vmi.Name, network.Name)                 // vmi.name instead of vm
-		log.Log.Object(vmi).Infof("about to create ipam Claim for %q", claimName) // vmi instead of vm
-		_, err = t.virtClient.IPAMClaimsClient().K8sV1alpha1().IPAMClaims(vmi.Namespace).Create(
-			context.Background(),
-			createIPAMClaim(vmi, claimName, network), // passed vmi instead vm
-			metav1.CreateOptions{},
-		)
-		if err != nil && !apiErrors.IsAlreadyExists(err) {
+	if hasOwnerVm {
+		err = createIPAMClaims(vmi, nonAbsentNets, t.virtClient, persistentIPNetworks, networkNameScheme)
+		if err != nil {
 			return nil, err
-
 		}
 	}
 
@@ -1341,7 +1333,7 @@ func generateContainerSecurityContext(selinuxType string, container *k8sv1.Conta
 	container.SecurityContext.SELinuxOptions.Level = "s0"
 }
 
-func generatePodAnnotations(vmi *v1.VirtualMachineInstance, config *virtconfig.ClusterConfig) (map[string]string, error) {
+func generatePodAnnotations(vmi *v1.VirtualMachineInstance, vmRef string, nonAbsentIfaces []v1.Interface, nonAbsentNets []v1.Network, networkNameScheme map[string]string, persistentIPNetworks map[string]bool, config *virtconfig.ClusterConfig) (map[string]string, error) {
 	annotationsSet := map[string]string{
 		v1.DomainAnnotation: vmi.GetObjectMeta().GetName(),
 	}
@@ -1351,16 +1343,7 @@ func generatePodAnnotations(vmi *v1.VirtualMachineInstance, config *virtconfig.C
 
 	annotationsSet[podcmd.DefaultContainerAnnotationName] = "compute"
 
-	nonAbsentIfaces := vmispec.FilterInterfacesSpec(vmi.Spec.Domain.Devices.Interfaces, func(iface v1.Interface) bool {
-		return iface.State != v1.InterfaceStateAbsent
-	})
-	nonAbsentNets := vmispec.FilterNetworksByInterfaces(vmi.Spec.Networks, nonAbsentIfaces)
-	// filter here the map of persistentIp for IsSecondaryMultusNetwork, or maybe on the caller
-	// in case we already extract nonAbsentNets for building the interface Scheme and reusing it outside
-	// maybe we dont need to filter, but just to extract the naming scheme, and recheck IsSecondaryMultusNetwork outside
-	// when doing the IPAMClaim create loop, iterating the vm networks (but not that here they are filtered, so maybe
-	// we can use the scheme to know if they passed the filtering)
-	multusAnnotation, err := network.GenerateMultusCNIAnnotation(vmi.Namespace, vmi.Name, nonAbsentIfaces, nonAbsentNets, config)
+	multusAnnotation, err := network.GenerateMultusCNIAnnotationFromNameScheme(vmi.Namespace, vmRef, nonAbsentIfaces, nonAbsentNets, networkNameScheme, persistentIPNetworks, config)
 	if err != nil {
 		return nil, err
 	}
@@ -1550,11 +1533,24 @@ func readinessGates() []k8sv1.PodReadinessGate {
 	}
 }
 
-// TODO add rbacs, remove the code from vm.go (and remove current rbacs)
-// to copy owner ref from VMI (assuming it exists here, and that there is just one)
-// passed here vmi instead of VM, need to fix
-// fix the owner ref getting, render should get it
-func createIPAMClaim(vmi *v1.VirtualMachineInstance, claimName string, network v1.Network) *ipamclaims.IPAMClaim {
+func createIPAMClaim(namespace string, ownerRef metav1.OwnerReference, claimName string, network v1.Network, interfaceName string) *ipamclaims.IPAMClaim {
+	return &ipamclaims.IPAMClaim{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      claimName,
+			Namespace: namespace,
+			OwnerReferences: []metav1.OwnerReference{
+				ownerRef,
+			},
+		},
+		Spec: ipamclaims.IPAMClaimSpec{
+			Network:   network.Multus.NetworkName,
+			Interface: interfaceName,
+		},
+	}
+}
+
+func createIPAMClaims(vmi *v1.VirtualMachineInstance, nonAbsentNets []v1.Network, virtClient kubecli.KubevirtClient, persistentIPNetworks map[string]bool, networkNameScheme map[string]string) error {
+	// TODO used vmi.Name instead of vm.name
 	var ownerRef metav1.OwnerReference
 	refs := vmi.OwnerReferences
 	for i := range refs {
@@ -1563,16 +1559,29 @@ func createIPAMClaim(vmi *v1.VirtualMachineInstance, claimName string, network v
 		}
 	}
 
-	return &ipamclaims.IPAMClaim{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      claimName,
-			Namespace: vmi.Namespace,
-			OwnerReferences: []metav1.OwnerReference{
-				ownerRef,
-			},
-		},
-		Spec: ipamclaims.IPAMClaimSpec{
-			Network: network.Multus.NetworkName,
-		},
+	for _, network := range nonAbsentNets {
+		if network.Pod != nil {
+			continue
+		} else if network.Multus != nil && network.Multus.Default {
+			continue
+		}
+		if !persistentIPNetworks[network.Name] {
+			continue
+		}
+
+		claimName := fmt.Sprintf("%s.%s", vmi.Name, network.Name)                 // vmi.name instead of vm
+		log.Log.Object(vmi).Infof("about to create IPAM Claim for %q", claimName) // vmi instead of vm
+		_, err := virtClient.IPAMClaimsClient().K8sV1alpha1().IPAMClaims(vmi.Namespace).Create(
+			context.Background(),
+			createIPAMClaim(vmi.Namespace, ownerRef, claimName, network, networkNameScheme[network.Name]),
+			metav1.CreateOptions{},
+		)
+
+		// TODO need to make sure it really belong to current VM (gc might take time)
+		if err != nil && !apiErrors.IsAlreadyExists(err) {
+			return err
+		}
 	}
+
+	return nil
 }

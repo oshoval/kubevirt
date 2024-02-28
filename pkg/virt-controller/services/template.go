@@ -267,7 +267,7 @@ func (t *templateService) RenderMigrationManifest(vmi *v1.VirtualMachineInstance
 	if namescheme.PodHasOrdinalInterfaceName(network.NonDefaultMultusNetworksIndexedByIfaceName(pod)) {
 		ordinalNameScheme := namescheme.CreateOrdinalNetworkNameScheme(vmi.Spec.Networks)
 		multusNetworksAnnotation, err := network.GenerateMultusCNIAnnotationFromNameScheme(
-			vmi.Namespace, vmi.Spec.Domain.Devices.Interfaces, vmi.Spec.Networks, ordinalNameScheme, t.clusterConfig)
+			vmi.Namespace, vmi.Spec.Domain.Devices.Interfaces, vmi.Spec.Networks, ordinalNameScheme, map[string]network.IPAMClaimParams{}, t.clusterConfig)
 		if err != nil {
 			return nil, err
 		}
@@ -516,7 +516,7 @@ func (t *templateService) renderLaunchManifest(vmi *v1.VirtualMachineInstance, i
 		containers = append(containers, sidecarContainer)
 	}
 
-	podAnnotations, err := generatePodAnnotations(vmi, t.clusterConfig)
+	podAnnotations, err := generatePodAnnotations(t.virtClient, vmi, t.clusterConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -1312,7 +1312,7 @@ func generateContainerSecurityContext(selinuxType string, container *k8sv1.Conta
 	container.SecurityContext.SELinuxOptions.Level = "s0"
 }
 
-func generatePodAnnotations(vmi *v1.VirtualMachineInstance, config *virtconfig.ClusterConfig) (map[string]string, error) {
+func generatePodAnnotations(virtClient kubecli.KubevirtClient, vmi *v1.VirtualMachineInstance, config *virtconfig.ClusterConfig) (map[string]string, error) {
 	annotationsSet := map[string]string{
 		v1.DomainAnnotation: vmi.GetObjectMeta().GetName(),
 	}
@@ -1326,7 +1326,13 @@ func generatePodAnnotations(vmi *v1.VirtualMachineInstance, config *virtconfig.C
 		return iface.State != v1.InterfaceStateAbsent
 	})
 	nonAbsentNets := vmispec.FilterNetworksByInterfaces(vmi.Spec.Networks, nonAbsentIfaces)
-	multusAnnotation, err := network.GenerateMultusCNIAnnotation(vmi.Namespace, nonAbsentIfaces, nonAbsentNets, config)
+
+	networkToIPAMClaimParams, err := network.GetNetworkToIPAMClaimParams(virtClient, vmi.Namespace, vmi.Name, nonAbsentNets)
+	if err != nil {
+		return nil, fmt.Errorf("failed composing networkToIPAMClaimName: %w", err)
+	}
+
+	multusAnnotation, err := network.GenerateMultusCNIAnnotation(vmi.Namespace, nonAbsentIfaces, nonAbsentNets, networkToIPAMClaimParams, config)
 	if err != nil {
 		return nil, err
 	}

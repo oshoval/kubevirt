@@ -62,7 +62,7 @@ var _ = Describe("Multus annotations", func() {
 
 		It("when added an element, is no longer empty", func() {
 			podIfaceName := "net1"
-			multusAnnotationPool.add(newMultusAnnotationData(vmi.Namespace, vmi.Spec.Domain.Devices.Interfaces, network, podIfaceName))
+			multusAnnotationPool.add(newMultusAnnotationData(vmi.Namespace, vmi.Spec.Domain.Devices.Interfaces, network, podIfaceName, ""))
 			Expect(multusAnnotationPool.isEmpty()).To(BeFalse())
 		})
 
@@ -75,7 +75,7 @@ var _ = Describe("Multus annotations", func() {
 		BeforeEach(func() {
 			multusAnnotationPool = multusNetworkAnnotationPool{
 				pool: []networkv1.NetworkSelectionElement{
-					newMultusAnnotationData(vmi.Namespace, vmi.Spec.Domain.Devices.Interfaces, network, "net1"),
+					newMultusAnnotationData(vmi.Namespace, vmi.Spec.Domain.Devices.Interfaces, network, "net1", ""),
 				},
 			}
 		})
@@ -103,7 +103,7 @@ var _ = Describe("Multus annotations", func() {
 					"another-test-binding": {NetworkAttachmentDefinition: "another-test-binding-net"},
 				})
 
-				_, err := GenerateMultusCNIAnnotation(vmi.Namespace, vmi.Spec.Domain.Devices.Interfaces, vmi.Spec.Networks, config)
+				_, err := GenerateMultusCNIAnnotation(vmi.Namespace, vmi.Spec.Domain.Devices.Interfaces, vmi.Spec.Networks, map[string]IPAMClaimParams{}, config)
 
 				Expect(err).To(HaveOccurred())
 			})
@@ -123,7 +123,7 @@ var _ = Describe("Multus annotations", func() {
 					"test-binding": {NetworkAttachmentDefinition: "test-binding-net"},
 				})
 
-				Expect(GenerateMultusCNIAnnotation(vmi.Namespace, vmi.Spec.Domain.Devices.Interfaces, vmi.Spec.Networks, config)).To(MatchJSON(
+				Expect(GenerateMultusCNIAnnotation(vmi.Namespace, vmi.Spec.Domain.Devices.Interfaces, vmi.Spec.Networks, map[string]IPAMClaimParams{}, config)).To(MatchJSON(
 					`[
 						{"name": "test-binding-net","namespace": "default", "cni-args": {"logicNetworkName": "default"}},
 						{"name": "test1","namespace": "default","interface": "pod16477688c0e"},
@@ -143,7 +143,7 @@ var _ = Describe("Multus annotations", func() {
 						"test-binding": {NetworkAttachmentDefinition: netAttachDefRawName},
 					})
 
-					Expect(GenerateMultusCNIAnnotation(vmi.Namespace, vmi.Spec.Domain.Devices.Interfaces, vmi.Spec.Networks, config)).To(MatchJSON(expectedAnnot))
+					Expect(GenerateMultusCNIAnnotation(vmi.Namespace, vmi.Spec.Domain.Devices.Interfaces, vmi.Spec.Networks, map[string]IPAMClaimParams{}, config)).To(MatchJSON(expectedAnnot))
 				},
 				Entry("name with no namespace", "my-binding",
 					`[{"namespace": "default", "name": "my-binding", "cni-args": {"logicNetworkName": "default"}}]`),

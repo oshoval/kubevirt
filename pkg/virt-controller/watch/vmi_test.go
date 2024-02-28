@@ -47,6 +47,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	k8sruntime "k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/testing"
@@ -3414,7 +3415,7 @@ var _ = Describe("VirtualMachineInstance watcher", func() {
 
 			It("pod multus status cannot be updated", func() {
 				Expect(controller.updateMultusAnnotation(
-					vmi.Namespace, vmi.Spec.Domain.Devices.Interfaces[:1], vmi.Spec.Networks[:1], pod)).To(HaveOccurred())
+					vmi, vmi.Spec.Domain.Devices.Interfaces[:1], vmi.Spec.Networks[:1], pod)).To(HaveOccurred())
 			})
 		})
 
@@ -3431,8 +3432,12 @@ var _ = Describe("VirtualMachineInstance watcher", func() {
 			DescribeTable("update pods network annotation with", func(networks []v1.Network, interfaces []v1.Interface, matchers ...gomegaTypes.GomegaMatcher) {
 				vmi.Spec.Networks = networks
 				vmi.Spec.Domain.Devices.Interfaces = interfaces
+
+				err := createNADs(networkClient, vmi.Namespace, vmi.Spec.Networks)
+				Expect(err).ToNot(HaveOccurred())
+
 				Expect(controller.updateMultusAnnotation(
-					vmi.Namespace, vmi.Spec.Domain.Devices.Interfaces, vmi.Spec.Networks, pod)).To(Succeed())
+					vmi, vmi.Spec.Domain.Devices.Interfaces, vmi.Spec.Networks, pod)).To(Succeed())
 				for _, matcher := range matchers {
 					Expect(pod.Annotations).To(matcher)
 				}
@@ -3487,7 +3492,10 @@ var _ = Describe("VirtualMachineInstance watcher", func() {
 
 					prependInjectPodPatch(pod)
 
-					Expect(controller.updateMultusAnnotation(vmi.Namespace, vmi.Spec.Domain.Devices.Interfaces, vmi.Spec.Networks, pod)).To(Succeed())
+					err = createNADs(networkClient, vmi.Namespace, vmi.Spec.Networks)
+					Expect(err).ToNot(HaveOccurred())
+
+					Expect(controller.updateMultusAnnotation(vmi, vmi.Spec.Domain.Devices.Interfaces, vmi.Spec.Networks, pod)).To(Succeed())
 
 					Expect(pod.Annotations).To(HaveKey(networkv1.NetworkAttachmentAnnot))
 					Expect(pod.Annotations[networkv1.NetworkAttachmentAnnot]).To(MatchJSON(expectedMultusNetworksAnnotation))
@@ -3958,7 +3966,7 @@ func NewPodForVirtualMachine(vmi *virtv1.VirtualMachineInstance, phase k8sv1.Pod
 func NewPodForVirtualMachineWithMultusAnnotations(vmi *virtv1.VirtualMachineInstance, phase k8sv1.PodPhase, config *virtconfig.ClusterConfig, podNetworkStatus ...networkv1.NetworkStatus) (*k8sv1.Pod, error) {
 	pod := NewPodForVirtualMachine(vmi, phase)
 
-	multusAnnotations, err := network.GenerateMultusCNIAnnotation(vmi.Namespace, vmi.Spec.Domain.Devices.Interfaces, vmi.Spec.Networks, config)
+	multusAnnotations, err := network.GenerateMultusCNIAnnotation(vmi.Namespace, vmi.Spec.Domain.Devices.Interfaces, vmi.Spec.Networks, map[string]string{}, config)
 	if err != nil {
 		return nil, err
 	}
@@ -4182,4 +4190,34 @@ func newVMIWithGuestAgentInterface(vmi *virtv1.VirtualMachineInstance, ifaceName
 		InfoSource:    vmispec.InfoSourceGuestAgent,
 	})
 	return vmi
+}
+
+func createNADs(networkClient *fakenetworkclient.Clientset, namespace string, metworks []virtv1.Network) error {
+	createdNADs := map[string]bool{}
+
+	gvr := schema.GroupVersionResource{
+		Group:    "k8s.cni.cncf.io",
+		Version:  "v1",
+		Resource: "network-attachment-definitions",
+	}
+	for _, network := range metworks {
+		if createdNADs[network.NetworkSource.Multus.NetworkName] {
+			continue
+		}
+
+		nad := &networkv1.NetworkAttachmentDefinition{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      network.NetworkSource.Multus.NetworkName,
+				Namespace: namespace,
+			},
+		}
+		err := networkClient.Tracker().Create(gvr, nad, namespace)
+		if err != nil {
+			return err
+		}
+
+		createdNADs[network.NetworkSource.Multus.NetworkName] = true
+	}
+
+	return nil
 }

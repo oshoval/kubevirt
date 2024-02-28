@@ -132,6 +132,8 @@ const (
 	// MigrationBackoffReason is set when an error has occured while migrating
 	// and virt-controller is backing off before retrying.
 	MigrationBackoffReason = "MigrationBackoff"
+	// FailedCreateIPAMClaimReason is set when IPAMClaim creation error has occured
+	FailedCreateIPAMClaimReason = "FailedCreateIPAMClaim"
 )
 
 const failedToRenderLaunchManifestErrFormat = "failed to render launch manifest: %v"
@@ -1229,6 +1231,14 @@ func (c *VMIController) sync(vmi *virtv1.VirtualMachineInstance, pod *k8sv1.Pod,
 			return &syncErrorImpl{fmt.Errorf(failedToRenderLaunchManifestErrFormat, err), FailedCreatePodReason}
 		}
 
+		err = network.CreateIPAMClaims(c.clientset, vmi, c.getOwnerVMReference(vmi), c.clusterConfig.PersistentIPsEnabled())
+		if err != nil {
+			return &syncErrorImpl{
+				err:    fmt.Errorf(failedToRenderLaunchManifestErrFormat, err),
+				reason: FailedCreateIPAMClaimReason,
+			}
+		}
+
 		vmiKey := controller.VirtualMachineInstanceKey(vmi)
 		c.podExpectations.ExpectCreations(vmiKey, 1)
 		pod, err := c.clientset.CoreV1().Pods(vmi.GetNamespace()).Create(context.Background(), templatePod, v1.CreateOptions{})
@@ -1288,7 +1298,7 @@ func (c *VMIController) sync(vmi *virtv1.VirtualMachineInstance, pod *k8sv1.Pod,
 		}
 
 		if vmiSpecIfaces, vmiSpecNets, dynamicIfacesExist := network.CalculateInterfacesAndNetworksForMultusAnnotationUpdate(vmi); dynamicIfacesExist {
-			if err := c.updateMultusAnnotation(vmi.Namespace, vmiSpecIfaces, vmiSpecNets, pod); err != nil {
+			if err := c.updateMultusAnnotation(vmi, vmiSpecIfaces, vmiSpecNets, pod); err != nil {
 				return &syncErrorImpl{
 					err:    fmt.Errorf("failed to hot{un}plug network interfaces for vmi [%s/%s]: %w", vmi.GetNamespace(), vmi.GetName(), err),
 					reason: FailedHotplugSyncReason,
@@ -2353,12 +2363,17 @@ func (c *VMIController) getVolumePhaseMessageReason(volume *virtv1.Volume, names
 	return virtv1.VolumePending, PVCNotReadyReason, "PVC is in phase Lost"
 }
 
-func (c *VMIController) updateMultusAnnotation(namespace string, interfaces []virtv1.Interface, networks []virtv1.Network, pod *k8sv1.Pod) error {
+func (c *VMIController) updateMultusAnnotation(vmi *virtv1.VirtualMachineInstance, interfaces []virtv1.Interface, networks []virtv1.Network, pod *k8sv1.Pod) error {
 	podAnnotations := pod.GetAnnotations()
 
 	indexedMultusStatusIfaces := network.NonDefaultMultusNetworksIndexedByIfaceName(pod)
 	networkToPodIfaceMap := namescheme.CreateNetworkNameSchemeByPodNetworkStatus(networks, indexedMultusStatusIfaces)
-	multusAnnotations, err := network.GenerateMultusCNIAnnotationFromNameScheme(namespace, interfaces, networks, networkToPodIfaceMap, c.clusterConfig)
+
+	networkToIPAMClaimName, err := network.GetNetworkToIPAMClaimName(c.clientset, vmi, c.clusterConfig.PersistentIPsEnabled())
+	if err != nil {
+		return fmt.Errorf("GetNetworkToIPAMClaimName failed: %w", err)
+	}
+	multusAnnotations, err := network.GenerateMultusCNIAnnotationFromNameScheme(vmi.Namespace, interfaces, networks, networkToPodIfaceMap, networkToIPAMClaimName, c.clusterConfig)
 	if err != nil {
 		return err
 	}

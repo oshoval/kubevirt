@@ -265,9 +265,14 @@ func (t *templateService) RenderMigrationManifest(vmi *v1.VirtualMachineInstance
 	}
 
 	if namescheme.PodHasOrdinalInterfaceName(network.NonDefaultMultusNetworksIndexedByIfaceName(pod)) {
+		networkToIPAMClaimName, err := network.GetNetworkToIPAMClaimName(t.virtClient, vmi, t.clusterConfig.PersistentIPsEnabled())
+		if err != nil {
+			return nil, err
+		}
+
 		ordinalNameScheme := namescheme.CreateOrdinalNetworkNameScheme(vmi.Spec.Networks)
 		multusNetworksAnnotation, err := network.GenerateMultusCNIAnnotationFromNameScheme(
-			vmi.Namespace, vmi.Spec.Domain.Devices.Interfaces, vmi.Spec.Networks, ordinalNameScheme, t.clusterConfig)
+			vmi.Namespace, vmi.Spec.Domain.Devices.Interfaces, vmi.Spec.Networks, ordinalNameScheme, networkToIPAMClaimName, t.clusterConfig)
 		if err != nil {
 			return nil, err
 		}
@@ -516,7 +521,11 @@ func (t *templateService) renderLaunchManifest(vmi *v1.VirtualMachineInstance, i
 		containers = append(containers, sidecarContainer)
 	}
 
-	podAnnotations, err := generatePodAnnotations(vmi, t.clusterConfig)
+	networkToIPAMClaimName, err := network.GetNetworkToIPAMClaimName(t.virtClient, vmi, t.clusterConfig.PersistentIPsEnabled())
+	if err != nil {
+		return nil, err
+	}
+	podAnnotations, err := generatePodAnnotations(vmi, networkToIPAMClaimName, t.clusterConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -1312,7 +1321,7 @@ func generateContainerSecurityContext(selinuxType string, container *k8sv1.Conta
 	container.SecurityContext.SELinuxOptions.Level = "s0"
 }
 
-func generatePodAnnotations(vmi *v1.VirtualMachineInstance, config *virtconfig.ClusterConfig) (map[string]string, error) {
+func generatePodAnnotations(vmi *v1.VirtualMachineInstance, networkToIPAMClaimName map[string]string, config *virtconfig.ClusterConfig) (map[string]string, error) {
 	annotationsSet := map[string]string{
 		v1.DomainAnnotation: vmi.GetObjectMeta().GetName(),
 	}
@@ -1326,7 +1335,8 @@ func generatePodAnnotations(vmi *v1.VirtualMachineInstance, config *virtconfig.C
 		return iface.State != v1.InterfaceStateAbsent
 	})
 	nonAbsentNets := vmispec.FilterNetworksByInterfaces(vmi.Spec.Networks, nonAbsentIfaces)
-	multusAnnotation, err := network.GenerateMultusCNIAnnotation(vmi.Namespace, nonAbsentIfaces, nonAbsentNets, config)
+
+	multusAnnotation, err := network.GenerateMultusCNIAnnotation(vmi.Namespace, nonAbsentIfaces, nonAbsentNets, networkToIPAMClaimName, config)
 	if err != nil {
 		return nil, err
 	}

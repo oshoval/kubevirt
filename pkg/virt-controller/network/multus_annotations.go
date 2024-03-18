@@ -63,16 +63,11 @@ func GenerateMultusCNIAnnotation(namespace string, interfaces []v1.Interface, ne
 func GenerateMultusCNIAnnotationFromNameScheme(namespace string, interfaces []v1.Interface, networks []v1.Network, networkNameScheme map[string]string, networkToIPAMClaimParams map[string]IPAMClaimParams, config *virtconfig.ClusterConfig) (string, error) {
 	multusNetworkAnnotationPool := multusNetworkAnnotationPool{}
 
-	persistentIPsEnabled := config.PersistentIPsEnabled()
 	for _, network := range networks {
 		if vmispec.IsSecondaryMultusNetwork(network) {
-			claimName := networkToIPAMClaimParams[network.Name].claimName
-			if claimName != "" && !persistentIPsEnabled {
-				return "", fmt.Errorf("failed FG validation: allowPersistentIPs requested but PersistentIPs is disabled")
-			}
 			podInterfaceName := networkNameScheme[network.Name]
 			multusNetworkAnnotationPool.add(
-				newMultusAnnotationDataWithIPAMClaim(namespace, interfaces, network, podInterfaceName, claimName))
+				newMultusAnnotationDataWithIPAMClaim(namespace, interfaces, network, podInterfaceName, networkToIPAMClaimParams[network.Name].ClaimName))
 		}
 
 		if config != nil && config.NetworkBindingPlugingsEnabled() {

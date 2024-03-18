@@ -1233,15 +1233,17 @@ func (c *VMIController) sync(vmi *virtv1.VirtualMachineInstance, pod *k8sv1.Pod,
 			return &syncErrorImpl{fmt.Errorf(failedToRenderLaunchManifestErrFormat, err), FailedCreatePodReason}
 		}
 
-		ownerRef := c.getOwnerVMReference(vmi)
-		if ownerRef == nil {
-			v1.NewControllerRef(vmi, virtv1.VirtualMachineInstanceGroupVersionKind)
-		}
-		err = c.ipamClaimsManager.CreateIPAMClaims(vmi.Namespace, vmi.Name, vmi.Spec.Domain.Devices.Interfaces, vmi.Spec.Networks, ownerRef)
-		if err != nil {
-			return &syncErrorImpl{
-				err:    fmt.Errorf(failedToRenderLaunchManifestErrFormat, err),
-				reason: FailedCreateIPAMClaimReason,
+		if c.clusterConfig.PersistentIPsEnabled() {
+			ownerRef := c.getOwnerVMReference(vmi)
+			if ownerRef == nil {
+				v1.NewControllerRef(vmi, virtv1.VirtualMachineInstanceGroupVersionKind)
+			}
+			err = c.ipamClaimsManager.CreateIPAMClaims(vmi.Namespace, vmi.Name, vmi.Spec.Domain.Devices.Interfaces, vmi.Spec.Networks, ownerRef)
+			if err != nil {
+				return &syncErrorImpl{
+					err:    fmt.Errorf(failedToRenderLaunchManifestErrFormat, err),
+					reason: FailedCreateIPAMClaimReason,
+				}
 			}
 		}
 
@@ -1306,11 +1308,15 @@ func (c *VMIController) sync(vmi *virtv1.VirtualMachineInstance, pod *k8sv1.Pod,
 		if vmiSpecIfaces, vmiSpecNets, dynamicIfacesExist := network.CalculateInterfacesAndNetworksForMultusAnnotationUpdate(vmi); dynamicIfacesExist {
 			errMessage := fmt.Errorf("failed to hot{un}plug network interfaces for vmi [%s/%s]", vmi.GetNamespace(), vmi.GetName())
 
-			networkToIPAMClaimParams, err := network.GetNetworkToIPAMClaimParams(c.clientset, vmi.Namespace, vmi.Name, vmiSpecNets)
-			if err != nil {
-				return &syncErrorImpl{
-					err:    fmt.Errorf("%s: %w", errMessage, err),
-					reason: FailedHotplugSyncReason,
+			var networkToIPAMClaimParams map[string]network.IPAMClaimParams
+			if c.clusterConfig.PersistentIPsEnabled() {
+				var err error
+				networkToIPAMClaimParams, err = c.ipamClaimsManager.GetNetworkToIPAMClaimParams(vmi.Namespace, vmi.Name, vmiSpecNets)
+				if err != nil {
+					return &syncErrorImpl{
+						err:    fmt.Errorf("%s: %w", errMessage, err),
+						reason: FailedHotplugSyncReason,
+					}
 				}
 			}
 			if err := c.updateMultusAnnotation(vmi.Namespace, vmiSpecIfaces, vmiSpecNets, pod, networkToIPAMClaimParams); err != nil {

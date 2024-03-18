@@ -519,7 +519,15 @@ func (t *templateService) renderLaunchManifest(vmi *v1.VirtualMachineInstance, i
 		containers = append(containers, sidecarContainer)
 	}
 
-	podAnnotations, err := generatePodAnnotations(t.virtClient, vmi, t.clusterConfig)
+	var networkToIPAMClaimParams map[string]network.IPAMClaimParams
+	if t.clusterConfig.PersistentIPsEnabled() {
+		networkToIPAMClaimParams, err = network.ExtractNetworkToIPAMClaimParams(nads, vmi.Name)
+		if err != nil {
+			return nil, fmt.Errorf("failed extracting ipam claim params: %w", err)
+		}
+	}
+
+	podAnnotations, err := generatePodAnnotations(vmi, networkToIPAMClaimParams, t.clusterConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -1319,7 +1327,7 @@ func generateContainerSecurityContext(selinuxType string, container *k8sv1.Conta
 	container.SecurityContext.SELinuxOptions.Level = "s0"
 }
 
-func generatePodAnnotations(virtClient kubecli.KubevirtClient, vmi *v1.VirtualMachineInstance, config *virtconfig.ClusterConfig) (map[string]string, error) {
+func generatePodAnnotations(vmi *v1.VirtualMachineInstance, networkToIPAMClaimParams map[string]network.IPAMClaimParams, config *virtconfig.ClusterConfig) (map[string]string, error) {
 	annotationsSet := map[string]string{
 		v1.DomainAnnotation: vmi.GetObjectMeta().GetName(),
 	}
@@ -1331,11 +1339,6 @@ func generatePodAnnotations(virtClient kubecli.KubevirtClient, vmi *v1.VirtualMa
 		return iface.State != v1.InterfaceStateAbsent
 	})
 	nonAbsentNets := vmispec.FilterNetworksByInterfaces(vmi.Spec.Networks, nonAbsentIfaces)
-
-	networkToIPAMClaimParams, err := network.GetNetworkToIPAMClaimParams(virtClient, vmi.Namespace, vmi.Name, nonAbsentNets)
-	if err != nil {
-		return nil, fmt.Errorf("failed composing networkToIPAMClaimName: %w", err)
-	}
 
 	multusAnnotation, err := network.GenerateMultusCNIAnnotation(vmi.Namespace, nonAbsentIfaces, nonAbsentNets, networkToIPAMClaimParams, config)
 	if err != nil {

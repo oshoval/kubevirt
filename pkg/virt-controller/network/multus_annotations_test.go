@@ -161,50 +161,29 @@ var _ = Describe("Multus annotations", func() {
 			)
 		})
 
-		When("PersistentIPs feature enabled", func() {
-			It("should add ipam-claim-reference to multus annotation according networkToIPAMClaimParams", func() {
-				vmi := &v1.VirtualMachineInstance{ObjectMeta: metav1.ObjectMeta{Name: "testvmi", Namespace: "default"}}
-				vmi.Spec.Networks = []v1.Network{
-					{Name: "blue", NetworkSource: v1.NetworkSource{Multus: &v1.MultusNetwork{NetworkName: "test1"}}},
-					{Name: "red", NetworkSource: v1.NetworkSource{Multus: &v1.MultusNetwork{NetworkName: "other-namespace/test2"}}},
-				}
-				vmi.Spec.Domain.Devices.Interfaces = []v1.Interface{
-					{Name: "blue"},
-					{Name: "red"},
-				}
+		It("should add ipam-claim-reference to multus annotation according networkToIPAMClaimParams", func() {
+			vmi := &v1.VirtualMachineInstance{ObjectMeta: metav1.ObjectMeta{Name: "testvmi", Namespace: "default"}}
+			vmi.Spec.Networks = []v1.Network{
+				{Name: "blue", NetworkSource: v1.NetworkSource{Multus: &v1.MultusNetwork{NetworkName: "test1"}}},
+				{Name: "red", NetworkSource: v1.NetworkSource{Multus: &v1.MultusNetwork{NetworkName: "other-namespace/test2"}}},
+			}
+			vmi.Spec.Domain.Devices.Interfaces = []v1.Interface{
+				{Name: "blue"},
+				{Name: "red"},
+			}
 
-				config := testsClusterConfig([]string{"PersistentIPs"}, nil)
-				networkToIPAMClaimParams := map[string]IPAMClaimParams{
-					"red": {
-						claimName:   "testvmi.red",
-						networkName: "network_name",
-					}}
-				Expect(GenerateMultusCNIAnnotation(vmi.Namespace, vmi.Spec.Domain.Devices.Interfaces, vmi.Spec.Networks, networkToIPAMClaimParams, config)).To(MatchJSON(
-					`[
+			config := testsClusterConfig(nil, nil)
+			networkToIPAMClaimParams := map[string]IPAMClaimParams{
+				"red": {
+					ClaimName:   "testvmi.red",
+					NetworkName: "network_name",
+				}}
+			Expect(GenerateMultusCNIAnnotation(vmi.Namespace, vmi.Spec.Domain.Devices.Interfaces, vmi.Spec.Networks, networkToIPAMClaimParams, config)).To(MatchJSON(
+				`[
 						{"name": "test1","namespace": "default","interface": "pod16477688c0e"},
 						{"name": "test2","namespace": "other-namespace","interface": "podb1f51a511f1","ipam-claim-reference": "testvmi.red"}
 					]`,
-				))
-			})
-		})
-
-		When("PersistentIPs feature disabled", func() {
-			It("should fail when networkToIPAMClaimParams is not empty", func() {
-				vmi := &v1.VirtualMachineInstance{ObjectMeta: metav1.ObjectMeta{Name: "testvmi", Namespace: "default"}}
-				vmi.Spec.Networks = []v1.Network{
-					{Name: "red", NetworkSource: v1.NetworkSource{Multus: &v1.MultusNetwork{NetworkName: "namespace/test1"}}},
-				}
-				vmi.Spec.Domain.Devices.Interfaces = []v1.Interface{{Name: "red"}}
-
-				config := testsClusterConfig(nil, nil)
-				networkToIPAMClaimParams := map[string]IPAMClaimParams{
-					"red": {
-						claimName:   "testvmi.red",
-						networkName: "network_name",
-					}}
-				_, err := GenerateMultusCNIAnnotation(vmi.Namespace, vmi.Spec.Domain.Devices.Interfaces, vmi.Spec.Networks, networkToIPAMClaimParams, config)
-				Expect(err.Error()).To(Equal("failed FG validation: allowPersistentIPs requested but PersistentIPs is disabled"))
-			})
+			))
 		})
 	})
 })

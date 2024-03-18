@@ -36,6 +36,7 @@ import (
 	"kubevirt.io/client-go/kubecli"
 
 	ipamclaims "github.com/k8snetworkplumbingwg/ipamclaims/pkg/crd/ipamclaims/v1alpha1"
+	networkv1 "github.com/k8snetworkplumbingwg/network-attachment-definition-client/pkg/apis/k8s.cni.cncf.io/v1"
 )
 
 type IPAMClaimsManager struct {
@@ -49,13 +50,13 @@ func NewIPAMClaimsManager(client kubecli.KubevirtClient) *IPAMClaimsManager {
 }
 
 type IPAMClaimParams struct {
-	claimName   string
-	networkName string
+	ClaimName   string
+	NetworkName string
 }
 
 func (m *IPAMClaimsManager) CreateIPAMClaims(namespace string, vmiName string, interfaces []virtv1.Interface, networks []virtv1.Network, ownerRef *v1.OwnerReference) error {
 	nonAbsentNetworks := filterNonAbsentNetworks(interfaces, networks)
-	networkToIPAMClaimParams, err := GetNetworkToIPAMClaimParams(m.client, namespace, vmiName, nonAbsentNetworks)
+	networkToIPAMClaimParams, err := m.GetNetworkToIPAMClaimParams(namespace, vmiName, nonAbsentNetworks)
 	if err != nil {
 		return fmt.Errorf("failed composing networkToIPAMClaimName: %w", err)
 	}
@@ -126,44 +127,52 @@ func (m *IPAMClaimsManager) ensureValidIPAMClaimForVMI(namespace string, claimNa
 func composeIPAMClaim(namespace string, ownerRef v1.OwnerReference, ipamClaimParams IPAMClaimParams, interfaceName string) *ipamclaims.IPAMClaim {
 	return &ipamclaims.IPAMClaim{
 		ObjectMeta: v1.ObjectMeta{
-			Name:      ipamClaimParams.claimName,
+			Name:      ipamClaimParams.ClaimName,
 			Namespace: namespace,
 			OwnerReferences: []v1.OwnerReference{
 				ownerRef,
 			},
 		},
 		Spec: ipamclaims.IPAMClaimSpec{
-			Network:   ipamClaimParams.networkName,
+			Network:   ipamClaimParams.NetworkName,
 			Interface: interfaceName,
 		},
 	}
 }
 
-func GetNetworkToIPAMClaimParams(virtClient kubecli.KubevirtClient, namespace string, vmiName string, networks []virtv1.Network) (map[string]IPAMClaimParams, error) {
-	networkToIPAMClaimName := make(map[string]IPAMClaimParams)
-	for _, network := range vmispec.FilterMultusNonDefaultNetworks(networks) {
-		persistentIPsNetworkName, err := getPersistentIPsNetworkName(virtClient, namespace, network.Multus.NetworkName)
+func (m *IPAMClaimsManager) GetNetworkToIPAMClaimParams(namespace string, vmiName string, networks []virtv1.Network) (map[string]IPAMClaimParams, error) {
+	nonMultusDefaultNetworks := vmispec.FilterMultusNonDefaultNetworks(networks)
+	nads, err := GetNetworkAttachmentDefinitions(m.client, namespace, nonMultusDefaultNetworks)
+	if err != nil {
+		return nil, fmt.Errorf("failed retrieving network attachment definitions: %w", err)
+	}
+
+	networkToIPAMClaimParams, err := ExtractNetworkToIPAMClaimParams(nads, vmiName)
+	if err != nil {
+		return nil, fmt.Errorf("failed extracting ipam claim params: %w", err)
+	}
+
+	return networkToIPAMClaimParams, nil
+}
+
+func ExtractNetworkToIPAMClaimParams(nadMap map[string]*networkv1.NetworkAttachmentDefinition, vmiName string) (map[string]IPAMClaimParams, error) {
+	networkToIPAMClaimParams := map[string]IPAMClaimParams{}
+	for networkName, nad := range nadMap {
+		persistentIPsNetworkName, err := getPersistentIPsNetworkName(nad)
 		if err != nil {
-			return map[string]IPAMClaimParams{}, fmt.Errorf("failed retrieving persistentIPsNetworkName: %w", err)
+			return nil, fmt.Errorf("failed retrieving persistentIPsNetworkName: %w", err)
 		}
 		if persistentIPsNetworkName != "" {
-			networkToIPAMClaimName[network.Name] = IPAMClaimParams{
-				claimName:   fmt.Sprintf("%s.%s", vmiName, network.Name),
-				networkName: persistentIPsNetworkName,
+			networkToIPAMClaimParams[networkName] = IPAMClaimParams{
+				ClaimName:   fmt.Sprintf("%s.%s", vmiName, networkName),
+				NetworkName: persistentIPsNetworkName,
 			}
 		}
 	}
-
-	return networkToIPAMClaimName, nil
+	return networkToIPAMClaimParams, nil
 }
 
-func getPersistentIPsNetworkName(virtClient kubecli.KubevirtClient, namespace string, fullNetworkName string) (string, error) {
-	namespace, networkName := getNamespaceAndNetworkName(namespace, fullNetworkName)
-	nad, err := virtClient.NetworkClient().K8sCniCncfIoV1().NetworkAttachmentDefinitions(namespace).Get(context.Background(), networkName, v1.GetOptions{})
-	if err != nil {
-		return "", fmt.Errorf("failed to locate network attachment definition %s/%s", namespace, networkName)
-	}
-
+func getPersistentIPsNetworkName(nad *networkv1.NetworkAttachmentDefinition) (string, error) {
 	if nad.Spec.Config == "" {
 		return "", nil
 	}
@@ -172,7 +181,7 @@ func getPersistentIPsNetworkName(virtClient kubecli.KubevirtClient, namespace st
 		AllowPersistentIPs bool   `json:"allowPersistentIPs,omitempty"`
 		Name               string `json:"name,omitempty"`
 	}{}
-	err = json.Unmarshal([]byte(nad.Spec.Config), &netConf)
+	err := json.Unmarshal([]byte(nad.Spec.Config), &netConf)
 	if err != nil {
 		return "", fmt.Errorf("failed to unmarshal NAD spec.config JSON: %v", err)
 	}

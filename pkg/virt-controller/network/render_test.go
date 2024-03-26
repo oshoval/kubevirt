@@ -17,7 +17,7 @@
  *
  */
 
-package network
+package network_test
 
 import (
 	"github.com/golang/mock/gomock"
@@ -25,6 +25,8 @@ import (
 	. "github.com/onsi/gomega"
 
 	v1 "kubevirt.io/api/core/v1"
+
+	"kubevirt.io/kubevirt/pkg/virt-controller/network"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -44,40 +46,6 @@ const (
 	namespace              = "test-ns"
 	resourceName           = "resource_name"
 )
-
-var _ = Describe("getResourceNameForNetwork", func() {
-	It("should return empty string when resource name is not specified", func() {
-		network := &networkv1.NetworkAttachmentDefinition{}
-		Expect(getResourceNameForNetwork(network)).To(Equal(""))
-	})
-
-	It("should return resource name if specified", func() {
-		network := &networkv1.NetworkAttachmentDefinition{
-			ObjectMeta: metav1.ObjectMeta{
-				Annotations: map[string]string{
-					MULTUS_RESOURCE_NAME_ANNOTATION: "fake.com/fakeResource",
-				},
-			},
-		}
-		Expect(getResourceNameForNetwork(network)).To(Equal("fake.com/fakeResource"))
-	})
-})
-
-var _ = Describe("getNamespaceAndNetworkName", func() {
-	It("should return vmi namespace when namespace is implicit", func() {
-		vmi := &v1.VirtualMachineInstance{ObjectMeta: metav1.ObjectMeta{Name: "testvmi", Namespace: "testns"}}
-		namespace, networkName := getNamespaceAndNetworkName(vmi.Namespace, "testnet")
-		Expect(namespace).To(Equal("testns"))
-		Expect(networkName).To(Equal("testnet"))
-	})
-
-	It("should return namespace from networkName when namespace is explicit", func() {
-		vmi := &v1.VirtualMachineInstance{ObjectMeta: metav1.ObjectMeta{Name: "testvmi", Namespace: "testns"}}
-		namespace, networkName := getNamespaceAndNetworkName(vmi.Namespace, "otherns/testnet")
-		Expect(namespace).To(Equal("otherns"))
-		Expect(networkName).To(Equal("testnet"))
-	})
-})
 
 var _ = Describe("ExtractNetworkToResourceMap", func() {
 	var (
@@ -102,7 +70,7 @@ var _ = Describe("ExtractNetworkToResourceMap", func() {
 	})
 
 	It("should return map the expected networkToResourceMap", func() {
-		nads, err := GetNetworkAttachmentDefinitions(virtClient, namespace, multusNetworks)
+		nads, err := network.GetNetworkAttachmentDefinitions(virtClient, namespace, multusNetworks)
 		Expect(err).ToNot(HaveOccurred())
 		Expect(len(nads)).To(Equal(2))
 		for networkName, nad := range nads {
@@ -110,7 +78,7 @@ var _ = Describe("ExtractNetworkToResourceMap", func() {
 			Expect(nad.Namespace).To(Equal(namespace))
 		}
 
-		networkToResourceMap := ExtractNetworkToResourceMap(nads)
+		networkToResourceMap := network.ExtractNetworkToResourceMap(nads)
 		Expect(networkToResourceMap).To(Equal(map[string]string{"red": resourceName, "blue": resourceName}))
 	})
 })
@@ -126,7 +94,7 @@ func createNADs(networkClient *fakenetworkclient.Clientset, namespace string, ne
 			ObjectMeta: metav1.ObjectMeta{
 				Name:        network.NetworkSource.Multus.NetworkName,
 				Namespace:   namespace,
-				Annotations: map[string]string{MULTUS_RESOURCE_NAME_ANNOTATION: resourceName},
+				Annotations: map[string]string{network.MULTUS_RESOURCE_NAME_ANNOTATION: resourceName},
 			},
 		}
 

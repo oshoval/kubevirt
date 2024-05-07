@@ -17,7 +17,7 @@
  *
  */
 
-package network_test
+package ipamclaims_test
 
 import (
 	"testing"

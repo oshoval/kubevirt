@@ -36,6 +36,11 @@ import (
 	virtconfig "kubevirt.io/kubevirt/pkg/virt-config"
 )
 
+type IPAMClaimParams struct {
+	ClaimName   string
+	NetworkName string
+}
+
 type multusNetworkAnnotationPool struct {
 	pool []networkv1.NetworkSelectionElement
 }

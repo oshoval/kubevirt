@@ -161,13 +161,13 @@ var _ = Describe("Multus annotations", func() {
 
 		It("should add ipam-claim-reference to multus annotation according networkToIPAMClaimParams", func() {
 			vmi := libvmi.New(
-				libvmi.WithName("testvmi"),
 				libvmi.WithNamespace("default"),
 				libvmi.WithInterface(v1.Interface{Name: "blue"}),
 				libvmi.WithInterface(v1.Interface{Name: "red"}),
 				libvmi.WithNetwork(libvmi.MultusNetwork("blue", "test1")),
 				libvmi.WithNetwork(libvmi.MultusNetwork("red", "other-namespace/test2")),
 			)
+			vmi.Name = "testvmi"
 
 			networkToIPAMClaimParams := map[string]IPAMClaimParams{
 				"red": {

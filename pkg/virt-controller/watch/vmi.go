@@ -28,6 +28,7 @@ import (
 	"time"
 
 	"kubevirt.io/kubevirt/pkg/virt-controller/network"
+	"kubevirt.io/kubevirt/pkg/virt-controller/network/ipamclaims"
 
 	"kubevirt.io/kubevirt/pkg/virt-controller/watch/topology"
 
@@ -173,7 +174,7 @@ func NewVMIController(templateService services.TemplateService,
 		clusterConfig:     clusterConfig,
 		topologyHinter:    topologyHinter,
 		cidsMap:           newCIDsMap(),
-		ipamClaimsManager: network.NewIPAMClaimsManager(clientset),
+		ipamClaimsManager: ipamclaims.NewIPAMClaimsManager(clientset),
 	}
 
 	c.hasSynced = func() bool {
@@ -280,7 +281,7 @@ type VMIController struct {
 	clusterConfig     *virtconfig.ClusterConfig
 	cidsMap           *cidsMap
 	hasSynced         func() bool
-	ipamClaimsManager *network.IPAMClaimsManager
+	ipamClaimsManager *ipamclaims.IPAMClaimsManager
 }
 
 func (c *VMIController) Run(threadiness int, stopCh <-chan struct{}) {
@@ -1244,18 +1245,8 @@ func (c *VMIController) sync(vmi *virtv1.VirtualMachineInstance, pod *k8sv1.Pod,
 			return &syncErrorImpl{fmt.Errorf(failedToRenderLaunchManifestErrFormat, err), FailedCreatePodReason}
 		}
 
-		if c.clusterConfig.PersistentIPsEnabled() {
-			ownerRef := c.getOwnerVMReference(vmi)
-			if ownerRef == nil {
-				v1.NewControllerRef(vmi, virtv1.VirtualMachineInstanceGroupVersionKind)
-			}
-			err = c.ipamClaimsManager.CreateIPAMClaims(vmi.Namespace, vmi.Name, vmi.Spec.Domain.Devices.Interfaces, vmi.Spec.Networks, ownerRef)
-			if err != nil {
-				return &syncErrorImpl{
-					err:    fmt.Errorf(failedToRenderLaunchManifestErrFormat, err),
-					reason: FailedCreateIPAMClaimReason,
-				}
-			}
+		if syncErr := c.createIPAMClaims(vmi); err != nil {
+			return syncErr
 		}
 
 		vmiKey := controller.VirtualMachineInstanceKey(vmi)
@@ -2538,6 +2529,23 @@ func (c *VMIController) aggregateDataVolumesConditions(vmiCopy *virtv1.VirtualMa
 
 	vmiConditions := controller.NewVirtualMachineInstanceConditionManager()
 	vmiConditions.UpdateCondition(vmiCopy, &dvsReadyCondition)
+}
+
+func (c *VMIController) createIPAMClaims(vmi *virtv1.VirtualMachineInstance) syncError {
+	if c.clusterConfig.PersistentIPsEnabled() {
+		ownerRef := c.getOwnerVMReference(vmi)
+		if ownerRef == nil {
+			v1.NewControllerRef(vmi, virtv1.VirtualMachineInstanceGroupVersionKind)
+		}
+		err := c.ipamClaimsManager.CreateIPAMClaims(vmi.Namespace, vmi.Name, vmi.Spec.Domain.Devices.Interfaces, vmi.Spec.Networks, ownerRef)
+		if err != nil {
+			return &syncErrorImpl{
+				err:    fmt.Errorf(failedToRenderLaunchManifestErrFormat, err),
+				reason: FailedCreateIPAMClaimReason,
+			}
+		}
+	}
+	return nil
 }
 
 func statusOfReadyCondition(conditions []cdiv1.DataVolumeCondition) k8sv1.ConditionStatus {

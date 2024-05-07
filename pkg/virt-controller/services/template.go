@@ -55,6 +55,7 @@ import (
 	"kubevirt.io/kubevirt/pkg/util/net/dns"
 	virtconfig "kubevirt.io/kubevirt/pkg/virt-config"
 	"kubevirt.io/kubevirt/pkg/virt-controller/network"
+	"kubevirt.io/kubevirt/pkg/virt-controller/network/ipamclaims"
 	"kubevirt.io/kubevirt/pkg/virt-controller/watch/topology"
 	"kubevirt.io/kubevirt/pkg/virt-launcher/virtwrap/api"
 	operatorutil "kubevirt.io/kubevirt/pkg/virt-operator/util"
@@ -514,7 +515,7 @@ func (t *templateService) renderLaunchManifest(vmi *v1.VirtualMachineInstance, i
 
 	var networkToIPAMClaimParams map[string]network.IPAMClaimParams
 	if t.clusterConfig.PersistentIPsEnabled() {
-		networkToIPAMClaimParams, err = network.ExtractNetworkToIPAMClaimParams(nads, vmi.Name)
+		networkToIPAMClaimParams, err = ipamclaims.ExtractNetworkToIPAMClaimParams(nads, vmi.Name)
 		if err != nil {
 			return nil, fmt.Errorf("failed extracting ipam claim params: %w", err)
 		}

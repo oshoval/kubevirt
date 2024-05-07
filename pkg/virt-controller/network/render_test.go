@@ -24,6 +24,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 
 	v1 "kubevirt.io/api/core/v1"
 
@@ -33,6 +34,18 @@ import (
 	networkv1 "github.com/k8snetworkplumbingwg/network-attachment-definition-client/pkg/apis/k8s.cni.cncf.io/v1"
 
 	fakenetworkclient "kubevirt.io/client-go/generated/network-attachment-definition-client/clientset/versioned/fake"
+)
+
+const (
+	nadSuffix              = "-net"
+	nsSuffix               = "-ns"
+	redNetworkLogicalName  = "red"
+	redNamespace           = redNetworkLogicalName + nsSuffix
+	redNetworkNadName      = redNetworkLogicalName + nadSuffix
+	blueNetworkLogicalName = "blue"
+	blueNamespace          = blueNetworkLogicalName + nsSuffix
+	blueNetworkNadName     = blueNetworkLogicalName + nadSuffix
+	resourceName           = "resource_name"
 )
 
 var _ = Describe("GetNetworkAttachmentDefinitionByName", func() {
@@ -49,7 +62,7 @@ var _ = Describe("GetNetworkAttachmentDefinitionByName", func() {
 			*libvmi.MultusNetwork(blueNetworkLogicalName, blueNamespace+"/"+blueNetworkNadName),
 		}
 
-		Expect(createNADs(networkClient, redNamespace, multusNetworks, map[string]struct{}{})).To(Succeed())
+		Expect(createNADs(networkClient, redNamespace, multusNetworks)).To(Succeed())
 	})
 
 	It("should return map the expected nads", func() {
@@ -107,3 +120,28 @@ var _ = Describe("GetNamespaceAndNetworkName", func() {
 		Expect(networkName).To(Equal("testnet"))
 	})
 })
+
+func createNADs(networkClient *fakenetworkclient.Clientset, namespace string, networks []v1.Network) error {
+	gvr := schema.GroupVersionResource{
+		Group:    "k8s.cni.cncf.io",
+		Version:  "v1",
+		Resource: "network-attachment-definitions",
+	}
+	for _, net := range networks {
+		ns, networkName := network.GetNamespaceAndNetworkName(namespace, net.NetworkSource.Multus.NetworkName)
+		nad := &networkv1.NetworkAttachmentDefinition{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:        networkName,
+				Namespace:   ns,
+				Annotations: map[string]string{network.MULTUS_RESOURCE_NAME_ANNOTATION: resourceName},
+			},
+		}
+
+		err := networkClient.Tracker().Create(gvr, nad, ns)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}

@@ -17,7 +17,7 @@
  *
  */
 
-package network
+package ipamclaims
 
 import (
 	"context"
@@ -32,6 +32,7 @@ import (
 
 	"kubevirt.io/kubevirt/pkg/network/namescheme"
 	"kubevirt.io/kubevirt/pkg/network/vmispec"
+	"kubevirt.io/kubevirt/pkg/virt-controller/network"
 
 	"kubevirt.io/client-go/kubecli"
 
@@ -49,11 +50,6 @@ func NewIPAMClaimsManager(client kubecli.KubevirtClient) *IPAMClaimsManager {
 	}
 }
 
-type IPAMClaimParams struct {
-	ClaimName   string
-	NetworkName string
-}
-
 func (m *IPAMClaimsManager) CreateIPAMClaims(namespace string, vmiName string, interfaces []virtv1.Interface, networks []virtv1.Network, ownerRef *v1.OwnerReference) error {
 	nonAbsentNetworks := filterNonAbsentNetworks(interfaces, networks)
 	networkToIPAMClaimParams, err := m.GetNetworkToIPAMClaimParams(namespace, vmiName, nonAbsentNetworks)
@@ -69,7 +65,7 @@ func (m *IPAMClaimsManager) CreateIPAMClaims(namespace string, vmiName string, i
 	return nil
 }
 
-func composeIPAMClaims(namespace string, ownerRef *v1.OwnerReference, networkToIPAMClaimParams map[string]IPAMClaimParams) []*ipamclaims.IPAMClaim {
+func composeIPAMClaims(namespace string, ownerRef *v1.OwnerReference, networkToIPAMClaimParams map[string]network.IPAMClaimParams) []*ipamclaims.IPAMClaim {
 	claims := []*ipamclaims.IPAMClaim{}
 	for netName, ipamClaimParams := range networkToIPAMClaimParams {
 		claims = append(claims, composeIPAMClaim(
@@ -123,7 +119,7 @@ func (m *IPAMClaimsManager) ensureValidIPAMClaimForVMI(namespace string, claimNa
 	return nil
 }
 
-func composeIPAMClaim(namespace string, ownerRef v1.OwnerReference, ipamClaimParams IPAMClaimParams, interfaceName string) *ipamclaims.IPAMClaim {
+func composeIPAMClaim(namespace string, ownerRef v1.OwnerReference, ipamClaimParams network.IPAMClaimParams, interfaceName string) *ipamclaims.IPAMClaim {
 	return &ipamclaims.IPAMClaim{
 		ObjectMeta: v1.ObjectMeta{
 			Name:      ipamClaimParams.ClaimName,
@@ -139,9 +135,9 @@ func composeIPAMClaim(namespace string, ownerRef v1.OwnerReference, ipamClaimPar
 	}
 }
 
-func (m *IPAMClaimsManager) GetNetworkToIPAMClaimParams(namespace string, vmiName string, networks []virtv1.Network) (map[string]IPAMClaimParams, error) {
+func (m *IPAMClaimsManager) GetNetworkToIPAMClaimParams(namespace string, vmiName string, networks []virtv1.Network) (map[string]network.IPAMClaimParams, error) {
 	multusNonDefaultNetworks := vmispec.FilterMultusNonDefaultNetworks(networks)
-	nads, err := GetNetworkAttachmentDefinitionByName(m.client.NetworkClient().K8sCniCncfIoV1(), namespace, multusNonDefaultNetworks)
+	nads, err := network.GetNetworkAttachmentDefinitionByName(m.client.NetworkClient().K8sCniCncfIoV1(), namespace, multusNonDefaultNetworks)
 	if err != nil {
 		return nil, fmt.Errorf("failed retrieving network attachment definitions: %w", err)
 	}
@@ -154,15 +150,15 @@ func (m *IPAMClaimsManager) GetNetworkToIPAMClaimParams(namespace string, vmiNam
 	return networkToIPAMClaimParams, nil
 }
 
-func ExtractNetworkToIPAMClaimParams(nadMap map[string]*networkv1.NetworkAttachmentDefinition, vmiName string) (map[string]IPAMClaimParams, error) {
-	networkToIPAMClaimParams := map[string]IPAMClaimParams{}
+func ExtractNetworkToIPAMClaimParams(nadMap map[string]*networkv1.NetworkAttachmentDefinition, vmiName string) (map[string]network.IPAMClaimParams, error) {
+	networkToIPAMClaimParams := map[string]network.IPAMClaimParams{}
 	for networkName, nad := range nadMap {
 		persistentIPsNetworkName, err := getPersistentIPsNetworkName(nad)
 		if err != nil {
 			return nil, fmt.Errorf("failed retrieving persistentIPsNetworkName: %w", err)
 		}
 		if persistentIPsNetworkName != "" {
-			networkToIPAMClaimParams[networkName] = IPAMClaimParams{
+			networkToIPAMClaimParams[networkName] = network.IPAMClaimParams{
 				ClaimName:   fmt.Sprintf("%s.%s", vmiName, networkName),
 				NetworkName: persistentIPsNetworkName,
 			}

@@ -17,7 +17,7 @@
  *
  */
 
-package network_test
+package ipamclaims_test
 
 import (
 	"context"
@@ -29,6 +29,7 @@ import (
 	"github.com/golang/mock/gomock"
 
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 
 	networkv1 "github.com/k8snetworkplumbingwg/network-attachment-definition-client/pkg/apis/k8s.cni.cncf.io/v1"
 
@@ -38,16 +39,27 @@ import (
 	"kubevirt.io/kubevirt/pkg/libvmi"
 	"kubevirt.io/kubevirt/pkg/pointer"
 	"kubevirt.io/kubevirt/pkg/virt-controller/network"
+	"kubevirt.io/kubevirt/pkg/virt-controller/network/ipamclaims"
 
 	fakenetworkclient "kubevirt.io/client-go/generated/network-attachment-definition-client/clientset/versioned/fake"
 
-	ipamclaims "github.com/k8snetworkplumbingwg/ipamclaims/pkg/crd/ipamclaims/v1alpha1"
+	ipamv1alpha1 "github.com/k8snetworkplumbingwg/ipamclaims/pkg/crd/ipamclaims/v1alpha1"
 	fakeipamclaimclient "github.com/k8snetworkplumbingwg/ipamclaims/pkg/crd/ipamclaims/v1alpha1/apis/clientset/versioned/fake"
 )
 
 const (
+	nadSuffix              = "-net"
+	nsSuffix               = "-ns"
+	redNetworkLogicalName  = "red"
+	redNamespace           = redNetworkLogicalName + nsSuffix
+	redNetworkNadName      = redNetworkLogicalName + nadSuffix
+	blueNetworkLogicalName = "blue"
+	blueNetworkNadName     = blueNetworkLogicalName + nadSuffix
+)
+
+const (
 	vmiName        = "testvmi"
-	vmiUID         = vmiName + "UID"
+	vmiUID         = "vmiUID"
 	nadNetworkName = "nad_network_name"
 )
 
@@ -68,7 +80,6 @@ var _ = Describe("CreateIPAMClaims", func() {
 
 	BeforeEach(func() {
 		vmi = libvmi.New(
-			libvmi.WithName(vmiName),
 			libvmi.WithNamespace(redNamespace),
 			libvmi.WithNetwork(virtv1.DefaultPodNetwork()),
 			libvmi.WithNetwork(libvmi.MultusNetwork(redNetworkLogicalName, redNetworkNadName)),
@@ -83,20 +94,20 @@ var _ = Describe("CreateIPAMClaims", func() {
 	})
 
 	Context("With allowPersistentIPs enabled in the NADs", func() {
-		var ipamClaimsManager *network.IPAMClaimsManager
+		var ipamClaimsManager *ipamclaims.IPAMClaimsManager
 
 		BeforeEach(func() {
 			persistentIPs := map[string]struct{}{redNetworkNadName: {}, blueNetworkNadName: {}}
 			Expect(createNADs(networkClient, redNamespace, vmi.Spec.Networks, persistentIPs)).To(Succeed())
 
-			ipamClaimsManager = network.NewIPAMClaimsManager(virtClient)
+			ipamClaimsManager = ipamclaims.NewIPAMClaimsManager(virtClient)
 		})
 
 		It("should create the expected IPAMClaims", func() {
 			ownerRef := &v1.OwnerReference{
 				APIVersion:         "kubevirt.io/v1",
 				Kind:               "VirtualMachineInstance",
-				Name:               vmiName,
+				Name:               vmi.Name,
 				UID:                vmiUID,
 				Controller:         pointer.P(true),
 				BlockOwnerDeletion: pointer.P(true),
@@ -109,8 +120,8 @@ var _ = Describe("CreateIPAMClaims", func() {
 			)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(ipamClaimsList.Items).To(HaveLen(2))
-			assertIPAMClaim(ipamClaimsList.Items[0], blueNetworkLogicalName, "pod16477688c0e")
-			assertIPAMClaim(ipamClaimsList.Items[1], redNetworkLogicalName, "podb1f51a511f1")
+			assertIPAMClaim(ipamClaimsList.Items[0], vmi.Name, blueNetworkLogicalName, "pod16477688c0e")
+			assertIPAMClaim(ipamClaimsList.Items[1], vmi.Name, redNetworkLogicalName, "podb1f51a511f1")
 		})
 
 		Context("When IPAMClaims already exist", func() {
@@ -120,7 +131,7 @@ var _ = Describe("CreateIPAMClaims", func() {
 				ownerRef = &v1.OwnerReference{
 					APIVersion:         "kubevirt.io/v1",
 					Kind:               "VirtualMachineInstance",
-					Name:               vmiName,
+					Name:               vmi.Name,
 					UID:                vmiUID,
 					Controller:         pointer.P(true),
 					BlockOwnerDeletion: pointer.P(true),
@@ -163,12 +174,12 @@ var _ = Describe("CreateIPAMClaims", func() {
 			ownerRef := &v1.OwnerReference{
 				APIVersion:         "kubevirt.io/v1",
 				Kind:               "VirtualMachineInstance",
-				Name:               vmiName,
+				Name:               vmi.Name,
 				UID:                vmiUID,
 				Controller:         pointer.P(true),
 				BlockOwnerDeletion: pointer.P(true),
 			}
-			ipamClaimsManager := network.NewIPAMClaimsManager(virtClient)
+			ipamClaimsManager := ipamclaims.NewIPAMClaimsManager(virtClient)
 			Expect(ipamClaimsManager.CreateIPAMClaims(vmi.Namespace, vmi.Name, vmi.Spec.Domain.Devices.Interfaces, vmi.Spec.Networks, ownerRef)).To(Succeed())
 
 			ipamClaimsList, err := virtClient.IPAMClaimsClient().K8sV1alpha1().IPAMClaims(redNamespace).List(
@@ -207,7 +218,7 @@ var _ = Describe("GetNetworkToIPAMClaimParams", func() {
 	})
 
 	It("should return the expected IPAMClaim parameters", func() {
-		ipamClaimsManager := network.NewIPAMClaimsManager(virtClient)
+		ipamClaimsManager := ipamclaims.NewIPAMClaimsManager(virtClient)
 		networkToIPAMClaimParams, err := ipamClaimsManager.GetNetworkToIPAMClaimParams(redNamespace, vmiName, networks)
 		Expect(err).ToNot(HaveOccurred())
 		Expect(networkToIPAMClaimParams).To(Equal(map[string]network.IPAMClaimParams{
@@ -240,7 +251,7 @@ var _ = Describe("ExtractNetworkToIPAMClaimParams", func() {
 			},
 		}
 
-		networkToIPAMClaimParams, err := network.ExtractNetworkToIPAMClaimParams(nadMap, vmiName)
+		networkToIPAMClaimParams, err := ipamclaims.ExtractNetworkToIPAMClaimParams(nadMap, vmiName)
 		Expect(err).ToNot(HaveOccurred())
 		Expect(networkToIPAMClaimParams).To(Equal(expected))
 	})
@@ -253,25 +264,55 @@ var _ = Describe("ExtractNetworkToIPAMClaimParams", func() {
 				},
 			},
 		}
-		_, err := network.ExtractNetworkToIPAMClaimParams(nadMap, vmiName)
+		_, err := ipamclaims.ExtractNetworkToIPAMClaimParams(nadMap, vmiName)
 		Expect(err).To(HaveOccurred())
 		Expect(err.Error()).To(Equal("failed retrieving persistentIPsNetworkName: failed to obtain network name: missing required field"))
 	})
 })
 
-func assertIPAMClaim(claim ipamclaims.IPAMClaim, logicalName, interfaceName string) {
+func assertIPAMClaim(claim ipamv1alpha1.IPAMClaim, name, logicalName, interfaceName string) {
 	ExpectWithOffset(1, claim.OwnerReferences).To(ConsistOf(v1.OwnerReference{
 		APIVersion:         "kubevirt.io/v1",
 		Kind:               "VirtualMachineInstance",
-		Name:               vmiName,
+		Name:               name,
 		UID:                vmiUID,
 		Controller:         pointer.P(true),
 		BlockOwnerDeletion: pointer.P(true),
 	}))
-	ExpectWithOffset(1, claim.Name).To(Equal(fmt.Sprintf("%s.%s", vmiName, logicalName)))
+	ExpectWithOffset(1, claim.Name).To(Equal(fmt.Sprintf("%s.%s", name, logicalName)))
 	ExpectWithOffset(1, claim.Namespace).To(Equal(redNamespace))
-	ExpectWithOffset(1, claim.Spec).To(Equal(ipamclaims.IPAMClaimSpec{
+	ExpectWithOffset(1, claim.Spec).To(Equal(ipamv1alpha1.IPAMClaimSpec{
 		Network:   "nad_network_name",
 		Interface: interfaceName,
 	}))
+}
+
+func createNADs(networkClient *fakenetworkclient.Clientset, namespace string, networks []virtv1.Network, persistentIPs map[string]struct{}) error {
+	gvr := schema.GroupVersionResource{
+		Group:    "k8s.cni.cncf.io",
+		Version:  "v1",
+		Resource: "network-attachment-definitions",
+	}
+	for _, net := range networks {
+		if net.Multus == nil {
+			continue
+		}
+		nad := &networkv1.NetworkAttachmentDefinition{
+			ObjectMeta: v1.ObjectMeta{
+				Name:      net.NetworkSource.Multus.NetworkName,
+				Namespace: namespace,
+			},
+		}
+
+		if _, exists := persistentIPs[net.NetworkSource.Multus.NetworkName]; exists {
+			nad.Spec.Config = fmt.Sprintf(`{"allowPersistentIPs": true, "name": "%s"}`, nadNetworkName)
+		}
+
+		err := networkClient.Tracker().Create(gvr, nad, namespace)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
 }

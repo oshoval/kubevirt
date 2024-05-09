@@ -34,19 +34,23 @@ import (
 	"kubevirt.io/kubevirt/pkg/network/vmispec"
 	"kubevirt.io/kubevirt/pkg/virt-controller/network"
 
-	"kubevirt.io/client-go/kubecli"
+	networkv1 "github.com/k8snetworkplumbingwg/network-attachment-definition-client/pkg/apis/k8s.cni.cncf.io/v1"
 
 	ipamclaims "github.com/k8snetworkplumbingwg/ipamclaims/pkg/crd/ipamclaims/v1alpha1"
-	networkv1 "github.com/k8snetworkplumbingwg/network-attachment-definition-client/pkg/apis/k8s.cni.cncf.io/v1"
+	ipamclaimsclient "github.com/k8snetworkplumbingwg/ipamclaims/pkg/crd/ipamclaims/v1alpha1/apis/clientset/versioned"
+
+	networkclient "kubevirt.io/client-go/generated/network-attachment-definition-client/clientset/versioned"
 )
 
 type IPAMClaimsManager struct {
-	client kubecli.KubevirtClient
+	networkClient    networkclient.Interface
+	ipamClaimsClient ipamclaimsclient.Interface
 }
 
-func NewIPAMClaimsManager(client kubecli.KubevirtClient) *IPAMClaimsManager {
+func NewIPAMClaimsManager(networkClient networkclient.Interface, ipamClaimsClient ipamclaimsclient.Interface) *IPAMClaimsManager {
 	return &IPAMClaimsManager{
-		client: client,
+		networkClient:    networkClient,
+		ipamClaimsClient: ipamClaimsClient,
 	}
 }
 
@@ -84,7 +88,7 @@ func composeIPAMClaims(namespace string, ownerRef *v1.OwnerReference, networkToI
 
 func (m *IPAMClaimsManager) createIPAMClaims(namespace string, claims []*ipamclaims.IPAMClaim) error {
 	for _, claim := range claims {
-		_, err := m.client.IPAMClaimsClient().K8sV1alpha1().IPAMClaims(namespace).Create(
+		_, err := m.ipamClaimsClient.K8sV1alpha1().IPAMClaims(namespace).Create(
 			context.Background(),
 			claim,
 			v1.CreateOptions{},
@@ -106,7 +110,7 @@ func (m *IPAMClaimsManager) createIPAMClaims(namespace string, claims []*ipamcla
 }
 
 func (m *IPAMClaimsManager) ensureValidIPAMClaimForVMI(namespace string, claimName string, expectedOwnerUID types.UID) error {
-	currentClaim, err := m.client.IPAMClaimsClient().K8sV1alpha1().IPAMClaims(namespace).Get(
+	currentClaim, err := m.ipamClaimsClient.K8sV1alpha1().IPAMClaims(namespace).Get(
 		context.Background(),
 		claimName,
 		v1.GetOptions{},
@@ -139,7 +143,7 @@ func composeIPAMClaim(namespace string, ownerRef v1.OwnerReference, ipamClaimPar
 }
 
 func (m *IPAMClaimsManager) GetNetworkToIPAMClaimParams(namespace string, vmiName string, multusNonDefaultNetworks []virtv1.Network) (map[string]network.IPAMClaimParams, error) {
-	nads, err := network.GetNetworkAttachmentDefinitionByName(m.client.NetworkClient().K8sCniCncfIoV1(), namespace, multusNonDefaultNetworks)
+	nads, err := network.GetNetworkAttachmentDefinitionByName(m.networkClient.K8sCniCncfIoV1(), namespace, multusNonDefaultNetworks)
 	if err != nil {
 		return nil, fmt.Errorf("failed retrieving network attachment definitions: %w", err)
 	}

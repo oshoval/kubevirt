@@ -37,6 +37,7 @@ import (
 
 	clonev1alpha1 "kubevirt.io/api/clone/v1alpha1"
 
+	"kubevirt.io/kubevirt/pkg/virt-controller/ipamclaims"
 	"kubevirt.io/kubevirt/pkg/virt-controller/watch/clone"
 
 	"kubevirt.io/kubevirt/pkg/instancetype"
@@ -635,6 +636,7 @@ func (vca *VirtControllerApp) initCommon() {
 	if err != nil {
 		panic(err)
 	}
+	vca.vmiController.ipamClaimsManager = ipamclaims.NewIPAMClaimsManager(vca.clientSet.NetworkClient(), vca.clientSet.IPAMClaimsClient())
 
 	recorder := vca.newRecorder(k8sv1.NamespaceAll, "node-controller")
 	vca.nodeController, err = NewNodeController(vca.clientSet, vca.nodeInformer, vca.vmiInformer, recorder)

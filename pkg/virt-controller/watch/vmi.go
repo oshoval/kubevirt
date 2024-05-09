@@ -174,7 +174,6 @@ func NewVMIController(templateService services.TemplateService,
 		clusterConfig:     clusterConfig,
 		topologyHinter:    topologyHinter,
 		cidsMap:           newCIDsMap(),
-		ipamClaimsManager: ipamclaims.NewIPAMClaimsManager(clientset),
 	}
 
 	c.hasSynced = func() bool {

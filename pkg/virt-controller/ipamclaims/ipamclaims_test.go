@@ -26,15 +26,12 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/golang/mock/gomock"
-
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
 	networkv1 "github.com/k8snetworkplumbingwg/network-attachment-definition-client/pkg/apis/k8s.cni.cncf.io/v1"
 
 	virtv1 "kubevirt.io/api/core/v1"
-	"kubevirt.io/client-go/kubecli"
 
 	"kubevirt.io/kubevirt/pkg/libvmi"
 	"kubevirt.io/kubevirt/pkg/pointer"
@@ -64,18 +61,13 @@ const (
 )
 
 var _ = Describe("CreateIPAMClaims", func() {
-	var virtClient *kubecli.MockKubevirtClient
 	var networkClient *fakenetworkclient.Clientset
+	var ipamClaimsClient *fakeipamclaimclient.Clientset
 	var vmi *virtv1.VirtualMachineInstance
 
 	BeforeEach(func() {
-		ctrl := gomock.NewController(GinkgoT())
-		virtClient = kubecli.NewMockKubevirtClient(ctrl)
-
 		networkClient = fakenetworkclient.NewSimpleClientset()
-		virtClient.EXPECT().NetworkClient().Return(networkClient).AnyTimes()
-		ipamClaimsClient := fakeipamclaimclient.NewSimpleClientset()
-		virtClient.EXPECT().IPAMClaimsClient().Return(ipamClaimsClient).AnyTimes()
+		ipamClaimsClient = fakeipamclaimclient.NewSimpleClientset()
 	})
 
 	BeforeEach(func() {
@@ -100,7 +92,7 @@ var _ = Describe("CreateIPAMClaims", func() {
 			persistentIPs := map[string]struct{}{redNetworkNadName: {}, blueNetworkNadName: {}}
 			Expect(createNADs(networkClient, redNamespace, vmi.Spec.Networks, persistentIPs)).To(Succeed())
 
-			ipamClaimsManager = ipamclaims.NewIPAMClaimsManager(virtClient)
+			ipamClaimsManager = ipamclaims.NewIPAMClaimsManager(networkClient, ipamClaimsClient)
 		})
 
 		It("should create the expected IPAMClaims", func() {
@@ -114,7 +106,7 @@ var _ = Describe("CreateIPAMClaims", func() {
 			}
 			Expect(ipamClaimsManager.CreateIPAMClaims(vmi.Namespace, vmi.Name, vmi.Spec.Domain.Devices.Interfaces, vmi.Spec.Networks, ownerRef)).To(Succeed())
 
-			ipamClaimsList, err := virtClient.IPAMClaimsClient().K8sV1alpha1().IPAMClaims(redNamespace).List(
+			ipamClaimsList, err := ipamClaimsClient.K8sV1alpha1().IPAMClaims(redNamespace).List(
 				context.Background(),
 				v1.ListOptions{},
 			)
@@ -179,10 +171,10 @@ var _ = Describe("CreateIPAMClaims", func() {
 				Controller:         pointer.P(true),
 				BlockOwnerDeletion: pointer.P(true),
 			}
-			ipamClaimsManager := ipamclaims.NewIPAMClaimsManager(virtClient)
+			ipamClaimsManager := ipamclaims.NewIPAMClaimsManager(networkClient, fakeipamclaimclient.NewSimpleClientset())
 			Expect(ipamClaimsManager.CreateIPAMClaims(vmi.Namespace, vmi.Name, vmi.Spec.Domain.Devices.Interfaces, vmi.Spec.Networks, ownerRef)).To(Succeed())
 
-			ipamClaimsList, err := virtClient.IPAMClaimsClient().K8sV1alpha1().IPAMClaims(redNamespace).List(
+			ipamClaimsList, err := ipamClaimsClient.K8sV1alpha1().IPAMClaims(redNamespace).List(
 				context.Background(),
 				v1.ListOptions{},
 			)
@@ -193,16 +185,13 @@ var _ = Describe("CreateIPAMClaims", func() {
 })
 
 var _ = Describe("GetNetworkToIPAMClaimParams", func() {
-	var virtClient *kubecli.MockKubevirtClient
 	var networkClient *fakenetworkclient.Clientset
+	var ipamClaimsClient *fakeipamclaimclient.Clientset
 	var networks []virtv1.Network
 
 	BeforeEach(func() {
-		ctrl := gomock.NewController(GinkgoT())
-		virtClient = kubecli.NewMockKubevirtClient(ctrl)
-
 		networkClient = fakenetworkclient.NewSimpleClientset()
-		virtClient.EXPECT().NetworkClient().Return(networkClient).AnyTimes()
+		ipamClaimsClient = fakeipamclaimclient.NewSimpleClientset()
 	})
 
 	BeforeEach(func() {
@@ -216,7 +205,7 @@ var _ = Describe("GetNetworkToIPAMClaimParams", func() {
 	})
 
 	It("should return the expected IPAMClaim parameters", func() {
-		ipamClaimsManager := ipamclaims.NewIPAMClaimsManager(virtClient)
+		ipamClaimsManager := ipamclaims.NewIPAMClaimsManager(networkClient, ipamClaimsClient)
 		networkToIPAMClaimParams, err := ipamClaimsManager.GetNetworkToIPAMClaimParams(redNamespace, vmiName, networks)
 		Expect(err).ToNot(HaveOccurred())
 		Expect(networkToIPAMClaimParams).To(Equal(map[string]network.IPAMClaimParams{

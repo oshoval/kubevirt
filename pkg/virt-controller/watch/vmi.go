@@ -2414,7 +2414,13 @@ func (c *VMIController) updateMultusAnnotation(namespace string, interfaces []vi
 		networks,
 		networkToPodIfaceMap,
 		c.clusterConfig,
-		network.WithIPAMClaimRef())
+		network.WithIPAMClaimRef(networkToIPAMClaimParams))
+	if err != nil {
+		return err
+	}
+
+	// TODO remove (passed here)
+	multusAnnotations, err = network.AmendMultusCNIAnnotation(multusAnnotations, namespace, interfaces, networks, networkToPodIfaceMap, networkToIPAMClaimParams)
 	if err != nil {
 		return err
 	}

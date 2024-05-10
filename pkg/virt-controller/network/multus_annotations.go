@@ -28,12 +28,15 @@ import (
 	k8sv1 "k8s.io/api/core/v1"
 
 	v1 "kubevirt.io/api/core/v1"
+	virtv1 "kubevirt.io/api/core/v1"
 	"kubevirt.io/client-go/log"
 
 	"kubevirt.io/kubevirt/pkg/network/namescheme"
 	"kubevirt.io/kubevirt/pkg/network/netbinding"
 	"kubevirt.io/kubevirt/pkg/network/vmispec"
 	virtconfig "kubevirt.io/kubevirt/pkg/virt-config"
+
+	ipct "kubevirt.io/kubevirt/pkg/virt-controller/ipamclaims/types"
 )
 
 type MultusNetworkAnnotationPool struct {
@@ -57,18 +60,56 @@ func (mnap MultusNetworkAnnotationPool) ToString() (string, error) {
 	return string(multusNetworksAnnotation), nil
 }
 
-type Option func(MultusNetworkAnnotationPool, []v1.Network) MultusNetworkAnnotationPool
+func (mnap MultusNetworkAnnotationPool) FindMultusAnnotation(networkName string) (int, error) {
+	for i, element := range mnap.pool {
+		if element.InterfaceRequest != "" && element.Name == networkName {
+			return i, nil
+		}
+	}
+	return 0, fmt.Errorf("failed finding annotation for '%s'", networkName)
+}
+
+type Option func(MultusNetworkAnnotationPool, string, []v1.Network) MultusNetworkAnnotationPool
 
 // OR-TODO move
-func WithIPAMClaimRef() Option {
-	return func(pool MultusNetworkAnnotationPool, networks []v1.Network) MultusNetworkAnnotationPool {
+func WithIPAMClaimRef(networkToIPAMClaimParams map[string]ipct.IPAMClaimParams) Option {
+	return func(mnap MultusNetworkAnnotationPool, namespace string, networks []v1.Network) MultusNetworkAnnotationPool {
 		for _, network := range networks {
-			if vmispec.IsSecondaryMultusNetwork(network) {
-				// OR-TODO
+			if !vmispec.IsSecondaryMultusNetwork(network) {
+				continue
 			}
+
+			_, networkName := GetNamespaceAndNetworkName(namespace, network.Multus.NetworkName)
+			i, err := mnap.FindMultusAnnotation(networkName)
+			if err != nil {
+				continue // TODO handle error if needed
+			}
+			mnap.pool[i].IPAMClaimReference = networkToIPAMClaimParams[network.Name].ClaimName
 		}
-		return pool
+		return mnap
 	}
+}
+
+// TODO move / keep
+func AmendMultusCNIAnnotation(multusAnnotation string, namespace string, interfaces []virtv1.Interface, networks []virtv1.Network, networkNameScheme map[string]string, networkToIPAMClaimParams map[string]ipct.IPAMClaimParams) (string, error) {
+	if multusAnnotation == "" {
+		return "", nil
+	}
+
+	multusNetworkAnnotationPool := MultusNetworkAnnotationPool{}
+	if err := json.Unmarshal([]byte(multusAnnotation), &multusNetworkAnnotationPool.pool); err != nil {
+		return "", err
+	}
+
+	// TODO
+	// for _, network := range networks {
+	// 	if vmispec.IsSecondaryMultusNetwork(network) {
+	// 		//podInterfaceName := networkNameScheme[network.Name]
+	// 		// find and change
+	// 	}
+	// }
+
+	return multusNetworkAnnotationPool.ToString()
 }
 
 func GenerateMultusCNIAnnotation(namespace string, interfaces []v1.Interface, networks []v1.Network, config *virtconfig.ClusterConfig, options ...Option) (string, error) {
@@ -100,7 +141,7 @@ func GenerateMultusCNIAnnotationFromNameScheme(namespace string, interfaces []v1
 	}
 
 	for _, option := range options {
-		multusNetworkAnnotationPool = option(multusNetworkAnnotationPool, networks)
+		multusNetworkAnnotationPool = option(multusNetworkAnnotationPool, namespace, networks)
 	}
 
 	if !multusNetworkAnnotationPool.IsEmpty() {

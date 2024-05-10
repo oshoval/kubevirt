@@ -1349,7 +1349,13 @@ func generatePodAnnotations(vmi *v1.VirtualMachineInstance, networkToIPAMClaimPa
 		nonAbsentNets,
 		networkToPodIfaceMap,
 		config,
-		network.WithIPAMClaimRef())
+		network.WithIPAMClaimRef(networkToIPAMClaimParams))
+	if err != nil {
+		return nil, err
+	}
+
+	// TODO remove
+	multusAnnotation, err = network.AmendMultusCNIAnnotation(multusAnnotation, vmi.Namespace, nonAbsentIfaces, nonAbsentNets, networkToPodIfaceMap, networkToIPAMClaimParams)
 	if err != nil {
 		return nil, err
 	}

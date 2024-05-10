@@ -57,18 +57,38 @@ func (mnap multusNetworkAnnotationPool) toString() (string, error) {
 	return string(multusNetworksAnnotation), nil
 }
 
-func GenerateMultusCNIAnnotation(namespace string, interfaces []v1.Interface, networks []v1.Network, networkToIPAMClaimParams map[string]ipct.IPAMClaimParams, config *virtconfig.ClusterConfig) (string, error) {
-	return GenerateMultusCNIAnnotationFromNameScheme(namespace, interfaces, networks, namescheme.CreateHashedNetworkNameScheme(networks), networkToIPAMClaimParams, config)
+func AmendMultusCNIAnnotation(multusAnnotation string, namespace string, interfaces []v1.Interface, networks []v1.Network, networkNameScheme map[string]string, networkToIPAMClaimParams map[string]ipct.IPAMClaimParams) (string, error) {
+	if multusAnnotation == "" {
+		return "", nil
+	}
+
+	multusNetworkAnnotationPool := multusNetworkAnnotationPool{}
+	if err := json.Unmarshal([]byte(multusAnnotation), &multusNetworkAnnotationPool); err != nil {
+		return "", err
+	}
+
+	for _, network := range networks {
+		if vmispec.IsSecondaryMultusNetwork(network) {
+			//podInterfaceName := networkNameScheme[network.Name]
+			// find and change
+		}
+	}
+
+	return multusNetworkAnnotationPool.toString()
 }
 
-func GenerateMultusCNIAnnotationFromNameScheme(namespace string, interfaces []v1.Interface, networks []v1.Network, networkNameScheme map[string]string, networkToIPAMClaimParams map[string]ipct.IPAMClaimParams, config *virtconfig.ClusterConfig) (string, error) {
+func GenerateMultusCNIAnnotation(namespace string, interfaces []v1.Interface, networks []v1.Network, config *virtconfig.ClusterConfig) (string, error) {
+	return GenerateMultusCNIAnnotationFromNameScheme(namespace, interfaces, networks, namescheme.CreateHashedNetworkNameScheme(networks), config)
+}
+
+func GenerateMultusCNIAnnotationFromNameScheme(namespace string, interfaces []v1.Interface, networks []v1.Network, networkNameScheme map[string]string, config *virtconfig.ClusterConfig) (string, error) {
 	multusNetworkAnnotationPool := multusNetworkAnnotationPool{}
 
 	for _, network := range networks {
 		if vmispec.IsSecondaryMultusNetwork(network) {
 			podInterfaceName := networkNameScheme[network.Name]
 			multusNetworkAnnotationPool.add(
-				newMultusAnnotationDataWithIPAMClaim(namespace, interfaces, network, podInterfaceName, networkToIPAMClaimParams[network.Name].ClaimName))
+				newMultusAnnotationData(namespace, interfaces, network, podInterfaceName))
 		}
 
 		if config != nil && config.NetworkBindingPlugingsEnabled() {
@@ -115,7 +135,7 @@ func newBindingPluginMultusAnnotationData(kvConfig *v1.KubeVirtConfiguration, pl
 	}, nil
 }
 
-func newMultusAnnotationDataWithIPAMClaim(namespace string, interfaces []v1.Interface, network v1.Network, podInterfaceName string, ipamClaimName string) networkv1.NetworkSelectionElement {
+func newMultusAnnotationData(namespace string, interfaces []v1.Interface, network v1.Network, podInterfaceName string) networkv1.NetworkSelectionElement {
 	multusIface := vmispec.LookupInterfaceByName(interfaces, network.Name)
 	namespace, networkName := GetNamespaceAndNetworkName(namespace, network.Multus.NetworkName)
 	var multusIfaceMac string
@@ -123,11 +143,10 @@ func newMultusAnnotationDataWithIPAMClaim(namespace string, interfaces []v1.Inte
 		multusIfaceMac = multusIface.MacAddress
 	}
 	return networkv1.NetworkSelectionElement{
-		InterfaceRequest:   podInterfaceName,
-		MacRequest:         multusIfaceMac,
-		Namespace:          namespace,
-		Name:               networkName,
-		IPAMClaimReference: ipamClaimName,
+		InterfaceRequest: podInterfaceName,
+		MacRequest:       multusIfaceMac,
+		Namespace:        namespace,
+		Name:             networkName,
 	}
 }
 

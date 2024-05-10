@@ -263,7 +263,7 @@ func (t *templateService) RenderMigrationManifest(vmi *v1.VirtualMachineInstance
 	if namescheme.PodHasOrdinalInterfaceName(network.NonDefaultMultusNetworksIndexedByIfaceName(pod)) {
 		ordinalNameScheme := namescheme.CreateOrdinalNetworkNameScheme(vmi.Spec.Networks)
 		multusNetworksAnnotation, err := network.GenerateMultusCNIAnnotationFromNameScheme(
-			vmi.Namespace, vmi.Spec.Domain.Devices.Interfaces, vmi.Spec.Networks, ordinalNameScheme, map[string]ipct.IPAMClaimParams{}, t.clusterConfig)
+			vmi.Namespace, vmi.Spec.Domain.Devices.Interfaces, vmi.Spec.Networks, ordinalNameScheme, t.clusterConfig)
 		if err != nil {
 			return nil, err
 		}
@@ -1341,10 +1341,16 @@ func generatePodAnnotations(vmi *v1.VirtualMachineInstance, networkToIPAMClaimPa
 	})
 	nonAbsentNets := vmispec.FilterNetworksByInterfaces(vmi.Spec.Networks, nonAbsentIfaces)
 
-	multusAnnotation, err := network.GenerateMultusCNIAnnotation(vmi.Namespace, nonAbsentIfaces, nonAbsentNets, networkToIPAMClaimParams, config)
+	networkToPodIfaceMap := namescheme.CreateHashedNetworkNameScheme(nonAbsentNets)
+	multusAnnotation, err := network.GenerateMultusCNIAnnotationFromNameScheme(vmi.Namespace, nonAbsentIfaces, nonAbsentNets, networkToPodIfaceMap, config)
 	if err != nil {
 		return nil, err
 	}
+	multusAnnotation, err = network.AmendMultusCNIAnnotation(multusAnnotation, vmi.Namespace, nonAbsentIfaces, nonAbsentNets, networkToPodIfaceMap, networkToIPAMClaimParams)
+	if err != nil {
+		return nil, err
+	}
+
 	if multusAnnotation != "" {
 		annotationsSet[networkv1.NetworkAttachmentAnnot] = multusAnnotation
 	}

@@ -34,22 +34,22 @@ import (
 	"kubevirt.io/kubevirt/pkg/network/netbinding"
 	"kubevirt.io/kubevirt/pkg/network/vmispec"
 	virtconfig "kubevirt.io/kubevirt/pkg/virt-config"
-	ipct "kubevirt.io/kubevirt/pkg/virt-controller/ipamclaims/types"
 )
 
-type multusNetworkAnnotationPool struct {
+type MultusNetworkAnnotationPool struct {
 	pool []networkv1.NetworkSelectionElement
 }
 
-func (mnap *multusNetworkAnnotationPool) add(multusNetworkAnnotation networkv1.NetworkSelectionElement) {
+// OR-TODO revert unneeded
+func (mnap *MultusNetworkAnnotationPool) Add(multusNetworkAnnotation networkv1.NetworkSelectionElement) {
 	mnap.pool = append(mnap.pool, multusNetworkAnnotation)
 }
 
-func (mnap multusNetworkAnnotationPool) isEmpty() bool {
+func (mnap MultusNetworkAnnotationPool) IsEmpty() bool {
 	return len(mnap.pool) == 0
 }
 
-func (mnap multusNetworkAnnotationPool) toString() (string, error) {
+func (mnap MultusNetworkAnnotationPool) ToString() (string, error) {
 	multusNetworksAnnotation, err := json.Marshal(mnap.pool)
 	if err != nil {
 		return "", fmt.Errorf("failed to create JSON list from multus interface pool %v", mnap.pool)
@@ -57,37 +57,31 @@ func (mnap multusNetworkAnnotationPool) toString() (string, error) {
 	return string(multusNetworksAnnotation), nil
 }
 
-func AmendMultusCNIAnnotation(multusAnnotation string, namespace string, interfaces []v1.Interface, networks []v1.Network, networkNameScheme map[string]string, networkToIPAMClaimParams map[string]ipct.IPAMClaimParams) (string, error) {
-	if multusAnnotation == "" {
-		return "", nil
-	}
+type Option func(MultusNetworkAnnotationPool, []v1.Network) MultusNetworkAnnotationPool
 
-	multusNetworkAnnotationPool := multusNetworkAnnotationPool{}
-	if err := json.Unmarshal([]byte(multusAnnotation), &multusNetworkAnnotationPool); err != nil {
-		return "", err
-	}
-
-	for _, network := range networks {
-		if vmispec.IsSecondaryMultusNetwork(network) {
-			//podInterfaceName := networkNameScheme[network.Name]
-			// find and change
+// OR-TODO move
+func WithIPAMClaimRef() Option {
+	return func(pool MultusNetworkAnnotationPool, networks []v1.Network) MultusNetworkAnnotationPool {
+		for _, network := range networks {
+			if vmispec.IsSecondaryMultusNetwork(network) {
+				// OR-TODO
+			}
 		}
+		return pool
 	}
-
-	return multusNetworkAnnotationPool.toString()
 }
 
-func GenerateMultusCNIAnnotation(namespace string, interfaces []v1.Interface, networks []v1.Network, config *virtconfig.ClusterConfig) (string, error) {
-	return GenerateMultusCNIAnnotationFromNameScheme(namespace, interfaces, networks, namescheme.CreateHashedNetworkNameScheme(networks), config)
+func GenerateMultusCNIAnnotation(namespace string, interfaces []v1.Interface, networks []v1.Network, config *virtconfig.ClusterConfig, options ...Option) (string, error) {
+	return GenerateMultusCNIAnnotationFromNameScheme(namespace, interfaces, networks, namescheme.CreateHashedNetworkNameScheme(networks), config, options...)
 }
 
-func GenerateMultusCNIAnnotationFromNameScheme(namespace string, interfaces []v1.Interface, networks []v1.Network, networkNameScheme map[string]string, config *virtconfig.ClusterConfig) (string, error) {
-	multusNetworkAnnotationPool := multusNetworkAnnotationPool{}
+func GenerateMultusCNIAnnotationFromNameScheme(namespace string, interfaces []v1.Interface, networks []v1.Network, networkNameScheme map[string]string, config *virtconfig.ClusterConfig, options ...Option) (string, error) {
+	multusNetworkAnnotationPool := MultusNetworkAnnotationPool{}
 
 	for _, network := range networks {
 		if vmispec.IsSecondaryMultusNetwork(network) {
 			podInterfaceName := networkNameScheme[network.Name]
-			multusNetworkAnnotationPool.add(
+			multusNetworkAnnotationPool.Add(
 				newMultusAnnotationData(namespace, interfaces, network, podInterfaceName))
 		}
 
@@ -99,14 +93,18 @@ func GenerateMultusCNIAnnotationFromNameScheme(namespace string, interfaces []v1
 					return "", err
 				}
 				if bindingPluginAnnotationData != nil {
-					multusNetworkAnnotationPool.add(*bindingPluginAnnotationData)
+					multusNetworkAnnotationPool.Add(*bindingPluginAnnotationData)
 				}
 			}
 		}
 	}
 
-	if !multusNetworkAnnotationPool.isEmpty() {
-		return multusNetworkAnnotationPool.toString()
+	for _, option := range options {
+		multusNetworkAnnotationPool = option(multusNetworkAnnotationPool, networks)
+	}
+
+	if !multusNetworkAnnotationPool.IsEmpty() {
+		return multusNetworkAnnotationPool.ToString()
 	}
 	return "", nil
 }

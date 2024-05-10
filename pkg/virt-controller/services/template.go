@@ -1341,12 +1341,15 @@ func generatePodAnnotations(vmi *v1.VirtualMachineInstance, networkToIPAMClaimPa
 	})
 	nonAbsentNets := vmispec.FilterNetworksByInterfaces(vmi.Spec.Networks, nonAbsentIfaces)
 
+	// TODO since we use with, maybe can use GenerateMultusCNIAnnotation
 	networkToPodIfaceMap := namescheme.CreateHashedNetworkNameScheme(nonAbsentNets)
-	multusAnnotation, err := network.GenerateMultusCNIAnnotationFromNameScheme(vmi.Namespace, nonAbsentIfaces, nonAbsentNets, networkToPodIfaceMap, config)
-	if err != nil {
-		return nil, err
-	}
-	multusAnnotation, err = network.AmendMultusCNIAnnotation(multusAnnotation, vmi.Namespace, nonAbsentIfaces, nonAbsentNets, networkToPodIfaceMap, networkToIPAMClaimParams)
+	multusAnnotation, err := network.GenerateMultusCNIAnnotationFromNameScheme(
+		vmi.Namespace,
+		nonAbsentIfaces,
+		nonAbsentNets,
+		networkToPodIfaceMap,
+		config,
+		network.WithIPAMClaimRef())
 	if err != nil {
 		return nil, err
 	}

@@ -35,7 +35,7 @@ import (
 )
 
 var _ = Describe("Multus annotations", func() {
-	var multusAnnotationPool multusNetworkAnnotationPool
+	var multusAnnotationPool MultusNetworkAnnotationPool
 	var vmi v1.VirtualMachineInstance
 	var network1, network2 v1.Network
 
@@ -59,27 +59,27 @@ var _ = Describe("Multus annotations", func() {
 
 	Context("a multus annotation pool with no elements", func() {
 		BeforeEach(func() {
-			multusAnnotationPool = multusNetworkAnnotationPool{}
+			multusAnnotationPool = MultusNetworkAnnotationPool{}
 		})
 
 		It("is empty", func() {
-			Expect(multusAnnotationPool.isEmpty()).To(BeTrue())
+			Expect(multusAnnotationPool.IsEmpty()).To(BeTrue())
 		})
 
 		It("when added an element, is no longer empty", func() {
 			podIfaceName := "net1"
-			multusAnnotationPool.add(newMultusAnnotationData(vmi.Namespace, vmi.Spec.Domain.Devices.Interfaces, network1, podIfaceName))
-			Expect(multusAnnotationPool.isEmpty()).To(BeFalse())
+			multusAnnotationPool.Add(newMultusAnnotationData(vmi.Namespace, vmi.Spec.Domain.Devices.Interfaces, network1, podIfaceName))
+			Expect(multusAnnotationPool.IsEmpty()).To(BeFalse())
 		})
 
 		It("generate a null string", func() {
-			Expect(multusAnnotationPool.toString()).To(BeIdenticalTo("null"))
+			Expect(multusAnnotationPool.ToString()).To(BeIdenticalTo("null"))
 		})
 	})
 
 	Context("a multus annotation pool with elements", func() {
 		BeforeEach(func() {
-			multusAnnotationPool = multusNetworkAnnotationPool{
+			multusAnnotationPool = MultusNetworkAnnotationPool{
 				pool: []networkv1.NetworkSelectionElement{
 					newMultusAnnotationData(vmi.Namespace, vmi.Spec.Domain.Devices.Interfaces, network1, "net1"),
 					newMultusAnnotationData(vmi.Namespace, vmi.Spec.Domain.Devices.Interfaces, network2, "net2"),
@@ -88,12 +88,12 @@ var _ = Describe("Multus annotations", func() {
 		})
 
 		It("is not empty", func() {
-			Expect(multusAnnotationPool.isEmpty()).To(BeFalse())
+			Expect(multusAnnotationPool.IsEmpty()).To(BeFalse())
 		})
 
 		It("generates a json serialized string representing the annotation", func() {
 			expectedString := `[{"name":"test1","namespace":"namespace1","interface":"net1"},{"name":"test2","namespace":"namespace1","interface":"net2"}]`
-			Expect(multusAnnotationPool.toString()).To(BeIdenticalTo(expectedString))
+			Expect(multusAnnotationPool.ToString()).To(BeIdenticalTo(expectedString))
 		})
 	})
 

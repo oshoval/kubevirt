@@ -2407,12 +2407,14 @@ func (c *VMIController) updateMultusAnnotation(namespace string, interfaces []vi
 	indexedMultusStatusIfaces := network.NonDefaultMultusNetworksIndexedByIfaceName(pod)
 	networkToPodIfaceMap := namescheme.CreateNetworkNameSchemeByPodNetworkStatus(networks, indexedMultusStatusIfaces)
 
-	multusAnnotations, err := network.GenerateMultusCNIAnnotationFromNameScheme(namespace, interfaces, networks, networkToPodIfaceMap, c.clusterConfig)
-	if err != nil {
-		return err
-	}
-
-	multusAnnotations, err = network.AmendMultusCNIAnnotation(multusAnnotations, namespace, interfaces, networks, networkToPodIfaceMap, networkToIPAMClaimParams)
+	// TODO since we use with, maybe can use GenerateMultusCNIAnnotation
+	multusAnnotations, err := network.GenerateMultusCNIAnnotationFromNameScheme(
+		namespace,
+		interfaces,
+		networks,
+		networkToPodIfaceMap,
+		c.clusterConfig,
+		network.WithIPAMClaimRef())
 	if err != nil {
 		return err
 	}

@@ -27,8 +27,9 @@ import (
 )
 
 type IPAMClaimParams struct {
-	ClaimName   string
-	NetworkName string
+	ClaimName     string
+	NetworkName   string
+	InterfaceName string
 }
 
 type netConf struct {
@@ -52,4 +53,11 @@ func GetPersistentIPsConf(nad *networkv1.NetworkAttachmentDefinition) (netConf, 
 	}
 
 	return conf, nil
+}
+
+func UpdateNetworkParams(networkToIPAMClaimParams map[string]IPAMClaimParams, networkToPodIfaceMap map[string]string) {
+	for network, params := range networkToIPAMClaimParams {
+		params.InterfaceName = networkToPodIfaceMap[network]
+		networkToIPAMClaimParams[network] = params
+	}
 }

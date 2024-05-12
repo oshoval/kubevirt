@@ -58,9 +58,9 @@ func (mnap MultusNetworkAnnotationPool) toString() (string, error) {
 	return string(multusNetworksAnnotation), nil
 }
 
-func (mnap MultusNetworkAnnotationPool) FindMultusAnnotation(networkName string) (int, *networkv1.NetworkSelectionElement) {
+func (mnap MultusNetworkAnnotationPool) FindMultusAnnotation(namespace, networkName, interfaceName string) (int, *networkv1.NetworkSelectionElement) {
 	for i, element := range mnap.pool {
-		if element.InterfaceRequest != "" && element.Name == networkName {
+		if element.Namespace == namespace && element.Name == networkName && element.InterfaceRequest == interfaceName {
 			result := element
 			return i, &result
 		}

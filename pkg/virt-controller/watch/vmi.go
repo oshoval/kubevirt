@@ -2431,8 +2431,15 @@ func (c *VMIController) updateMultusAnnotation(namespace string, interfaces []vi
 
 	indexedMultusStatusIfaces := network.NonDefaultMultusNetworksIndexedByIfaceName(pod)
 	networkToPodIfaceMap := namescheme.CreateNetworkNameSchemeByPodNetworkStatus(networks, indexedMultusStatusIfaces)
+	libipam.UpdateNetworkParams(networkToIPAMClaimParams, networkToPodIfaceMap)
 
-	multusAnnotations, err := network.GenerateMultusCNIAnnotationFromNameScheme(namespace, interfaces, networks, networkToPodIfaceMap, c.clusterConfig)
+	multusAnnotations, err := network.GenerateMultusCNIAnnotationFromNameScheme(
+		namespace,
+		interfaces,
+		networks,
+		networkToPodIfaceMap,
+		c.clusterConfig,
+		ipamclaims.WithIPAMClaimRef(networkToIPAMClaimParams))
 	if err != nil {
 		return err
 	}

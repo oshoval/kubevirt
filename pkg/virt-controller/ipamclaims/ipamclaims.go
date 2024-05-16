@@ -21,7 +21,6 @@ package ipamclaims
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
@@ -32,7 +31,7 @@ import (
 
 	"kubevirt.io/kubevirt/pkg/network/namescheme"
 	"kubevirt.io/kubevirt/pkg/network/vmispec"
-	ipclaimtypes "kubevirt.io/kubevirt/pkg/virt-controller/ipamclaims/types"
+	"kubevirt.io/kubevirt/pkg/virt-controller/ipamclaims/libipam"
 	"kubevirt.io/kubevirt/pkg/virt-controller/network"
 
 	networkv1 "github.com/k8snetworkplumbingwg/network-attachment-definition-client/pkg/apis/k8s.cni.cncf.io/v1"
@@ -76,7 +75,7 @@ func (m *IPAMClaimsManager) CreateNewPodIPAMClaims(vmi *virtv1.VirtualMachineIns
 	return nil
 }
 
-func composeIPAMClaims(namespace string, ownerRef *v1.OwnerReference, networkToIPAMClaimParams map[string]ipclaimtypes.IPAMClaimParams) []*ipamclaims.IPAMClaim {
+func composeIPAMClaims(namespace string, ownerRef *v1.OwnerReference, networkToIPAMClaimParams map[string]libipam.IPAMClaimParams) []*ipamclaims.IPAMClaim {
 	claims := []*ipamclaims.IPAMClaim{}
 	for netName, ipamClaimParams := range networkToIPAMClaimParams {
 		claims = append(claims, composeIPAMClaim(
@@ -130,7 +129,7 @@ func (m *IPAMClaimsManager) ensureValidIPAMClaimForVMI(namespace string, claimNa
 	return nil
 }
 
-func composeIPAMClaim(namespace string, ownerRef v1.OwnerReference, ipamClaimParams ipclaimtypes.IPAMClaimParams, interfaceName string) *ipamclaims.IPAMClaim {
+func composeIPAMClaim(namespace string, ownerRef v1.OwnerReference, ipamClaimParams libipam.IPAMClaimParams, interfaceName string) *ipamclaims.IPAMClaim {
 	return &ipamclaims.IPAMClaim{
 		ObjectMeta: v1.ObjectMeta{
 			Name:      ipamClaimParams.ClaimName,
@@ -146,7 +145,7 @@ func composeIPAMClaim(namespace string, ownerRef v1.OwnerReference, ipamClaimPar
 	}
 }
 
-func (m *IPAMClaimsManager) GetNetworkToIPAMClaimParams(namespace string, vmiName string, multusNonDefaultNetworks []virtv1.Network) (map[string]ipclaimtypes.IPAMClaimParams, error) {
+func (m *IPAMClaimsManager) GetNetworkToIPAMClaimParams(namespace string, vmiName string, multusNonDefaultNetworks []virtv1.Network) (map[string]libipam.IPAMClaimParams, error) {
 	nads, err := network.GetNetworkAttachmentDefinitionByName(m.networkClient.K8sCniCncfIoV1(), namespace, multusNonDefaultNetworks)
 	if err != nil {
 		return nil, fmt.Errorf("failed retrieving network attachment definitions: %w", err)
@@ -160,46 +159,21 @@ func (m *IPAMClaimsManager) GetNetworkToIPAMClaimParams(namespace string, vmiNam
 	return networkToIPAMClaimParams, nil
 }
 
-func ExtractNetworkToIPAMClaimParams(nadMap map[string]*networkv1.NetworkAttachmentDefinition, vmiName string) (map[string]ipclaimtypes.IPAMClaimParams, error) {
-	networkToIPAMClaimParams := map[string]ipclaimtypes.IPAMClaimParams{}
+func ExtractNetworkToIPAMClaimParams(nadMap map[string]*networkv1.NetworkAttachmentDefinition, vmiName string) (map[string]libipam.IPAMClaimParams, error) {
+	networkToIPAMClaimParams := map[string]libipam.IPAMClaimParams{}
 	for networkName, nad := range nadMap {
-		persistentIPsNetworkName, err := getPersistentIPsNetworkName(nad)
+		netConf, err := libipam.GetPersistentIPsConf(nad)
 		if err != nil {
 			return nil, fmt.Errorf("failed retrieving persistentIPsNetworkName: %w", err)
 		}
-		if persistentIPsNetworkName != "" {
-			networkToIPAMClaimParams[networkName] = ipclaimtypes.IPAMClaimParams{
+		if netConf.AllowPersistentIPs {
+			networkToIPAMClaimParams[networkName] = libipam.IPAMClaimParams{
 				ClaimName:   fmt.Sprintf("%s.%s", vmiName, networkName),
-				NetworkName: persistentIPsNetworkName,
+				NetworkName: netConf.Name,
 			}
 		}
 	}
 	return networkToIPAMClaimParams, nil
-}
-
-func getPersistentIPsNetworkName(nad *networkv1.NetworkAttachmentDefinition) (string, error) {
-	if nad.Spec.Config == "" {
-		return "", nil
-	}
-
-	netConf := struct {
-		AllowPersistentIPs bool   `json:"allowPersistentIPs,omitempty"`
-		Name               string `json:"name,omitempty"`
-	}{}
-	err := json.Unmarshal([]byte(nad.Spec.Config), &netConf)
-	if err != nil {
-		return "", fmt.Errorf("failed to unmarshal NAD spec.config JSON: %v", err)
-	}
-
-	if !netConf.AllowPersistentIPs {
-		return "", nil
-	}
-
-	if netConf.Name == "" {
-		return "", fmt.Errorf("failed to obtain network name: missing required field")
-	}
-
-	return netConf.Name, nil
 }
 
 func filterNonAbsentNetworks(interfaces []virtv1.Interface, networks []virtv1.Network) []virtv1.Network {

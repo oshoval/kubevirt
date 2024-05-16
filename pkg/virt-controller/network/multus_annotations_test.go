@@ -32,7 +32,7 @@ import (
 	"kubevirt.io/kubevirt/pkg/libvmi"
 	"kubevirt.io/kubevirt/pkg/testutils"
 	virtconfig "kubevirt.io/kubevirt/pkg/virt-config"
-	ipclaimtypes "kubevirt.io/kubevirt/pkg/virt-controller/ipamclaims/types"
+	"kubevirt.io/kubevirt/pkg/virt-controller/ipamclaims/libipam"
 )
 
 var _ = Describe("Multus annotations", func() {
@@ -111,7 +111,7 @@ var _ = Describe("Multus annotations", func() {
 					"another-test-binding": {NetworkAttachmentDefinition: "another-test-binding-net"},
 				})
 
-				_, err := GenerateMultusCNIAnnotation(vmi.Namespace, vmi.Spec.Domain.Devices.Interfaces, vmi.Spec.Networks, map[string]ipclaimtypes.IPAMClaimParams{}, config)
+				_, err := GenerateMultusCNIAnnotation(vmi.Namespace, vmi.Spec.Domain.Devices.Interfaces, vmi.Spec.Networks, map[string]libipam.IPAMClaimParams{}, config)
 
 				Expect(err).To(HaveOccurred())
 			})
@@ -131,7 +131,7 @@ var _ = Describe("Multus annotations", func() {
 					"test-binding": {NetworkAttachmentDefinition: "test-binding-net"},
 				})
 
-				Expect(GenerateMultusCNIAnnotation(vmi.Namespace, vmi.Spec.Domain.Devices.Interfaces, vmi.Spec.Networks, map[string]ipclaimtypes.IPAMClaimParams{}, config)).To(MatchJSON(
+				Expect(GenerateMultusCNIAnnotation(vmi.Namespace, vmi.Spec.Domain.Devices.Interfaces, vmi.Spec.Networks, map[string]libipam.IPAMClaimParams{}, config)).To(MatchJSON(
 					`[
 						{"name": "test-binding-net","namespace": "default", "cni-args": {"logicNetworkName": "default"}},
 						{"name": "test1","namespace": "default","interface": "pod16477688c0e"},
@@ -151,7 +151,7 @@ var _ = Describe("Multus annotations", func() {
 						"test-binding": {NetworkAttachmentDefinition: netAttachDefRawName},
 					})
 
-					Expect(GenerateMultusCNIAnnotation(vmi.Namespace, vmi.Spec.Domain.Devices.Interfaces, vmi.Spec.Networks, map[string]ipclaimtypes.IPAMClaimParams{}, config)).To(MatchJSON(expectedAnnot))
+					Expect(GenerateMultusCNIAnnotation(vmi.Namespace, vmi.Spec.Domain.Devices.Interfaces, vmi.Spec.Networks, map[string]libipam.IPAMClaimParams{}, config)).To(MatchJSON(expectedAnnot))
 				},
 				Entry("name with no namespace", "my-binding",
 					`[{"namespace": "default", "name": "my-binding", "cni-args": {"logicNetworkName": "default"}}]`),
@@ -170,7 +170,7 @@ var _ = Describe("Multus annotations", func() {
 			)
 			vmi.Name = "testvmi"
 
-			networkToIPAMClaimParams := map[string]ipclaimtypes.IPAMClaimParams{
+			networkToIPAMClaimParams := map[string]libipam.IPAMClaimParams{
 				"red": {
 					ClaimName:   "testvmi.red",
 					NetworkName: "network_name",

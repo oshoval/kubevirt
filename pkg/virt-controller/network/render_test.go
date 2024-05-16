@@ -113,7 +113,7 @@ func createNADs(networkClient *fakenetworkclient.Clientset, namespace string, ne
 		Resource: "network-attachment-definitions",
 	}
 	for _, net := range networks {
-		ns, networkName := vmispec.GetNamespaceAndNetworkName(namespace, net.NetworkSource.Multus.NetworkName)
+		ns, networkName := vmispec.GetNamespaceAndNetworkName(namespace, net.Multus.NetworkName)
 		nad := &networkv1.NetworkAttachmentDefinition{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:        networkName,

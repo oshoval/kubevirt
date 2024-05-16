@@ -21,7 +21,12 @@ package network
 import (
 	v1 "kubevirt.io/api/core/v1"
 
+	"kubevirt.io/client-go/log"
+
 	"kubevirt.io/kubevirt/pkg/network/vmispec"
+	"kubevirt.io/kubevirt/pkg/virt-controller/ipamclaims/libipam"
+
+	k8scnicncfiov1 "kubevirt.io/client-go/generated/network-attachment-definition-client/clientset/versioned/typed/k8s.cni.cncf.io/v1"
 )
 
 func CalculateInterfacesAndNetworksForMultusAnnotationUpdate(vmi *v1.VirtualMachineInstance) ([]v1.Interface, []v1.Network, bool) {
@@ -52,19 +57,26 @@ func CalculateInterfacesAndNetworksForMultusAnnotationUpdate(vmi *v1.VirtualMach
 	return ifacesToAnnotate, networksToAnnotate, isIfaceChangeRequired
 }
 
-func ApplyDynamicIfaceRequestOnVMI(vm *v1.VirtualMachine, vmi *v1.VirtualMachineInstance, hasOrdinalIfaces bool) *v1.VirtualMachineInstanceSpec {
+func ApplyDynamicIfaceRequestOnVMI(networkClient k8scnicncfiov1.K8sCniCncfIoV1Interface, vm *v1.VirtualMachine, vmi *v1.VirtualMachineInstance, hasOrdinalIfaces bool) *v1.VirtualMachineInstanceSpec {
 	vmiSpecCopy := vmi.Spec.DeepCopy()
 	vmiIndexedInterfaces := vmispec.IndexInterfaceSpecByName(vmiSpecCopy.Domain.Devices.Interfaces)
 	vmIndexedNetworks := vmispec.IndexNetworkSpecByName(vm.Spec.Template.Spec.Networks)
+	vmiIndexedNetworks := vmispec.IndexNetworkSpecByName(vmiSpecCopy.Networks)
 	for _, vmIface := range vm.Spec.Template.Spec.Domain.Devices.Interfaces {
 		_, existsInVMISpec := vmiIndexedInterfaces[vmIface.Name]
 		shouldBeHotPlug := !existsInVMISpec && vmIface.State != v1.InterfaceStateAbsent && (vmIface.InterfaceBindingMethod.Bridge != nil || vmIface.InterfaceBindingMethod.SRIOV != nil)
 		shouldBeHotUnplug := !hasOrdinalIfaces && existsInVMISpec && vmIface.State == v1.InterfaceStateAbsent
 		if shouldBeHotPlug {
+			if skipPersistentIPNetwork(networkClient, vmi.Namespace, vmIndexedNetworks[vmIface.Name]) {
+				continue
+			}
 			vmiSpecCopy.Networks = append(vmiSpecCopy.Networks, vmIndexedNetworks[vmIface.Name])
 			vmiSpecCopy.Domain.Devices.Interfaces = append(vmiSpecCopy.Domain.Devices.Interfaces, vmIface)
 		}
 		if shouldBeHotUnplug {
+			if skipPersistentIPNetwork(networkClient, vmi.Namespace, vmiIndexedNetworks[vmIface.Name]) {
+				continue
+			}
 			vmiIface := vmispec.LookupInterfaceByName(vmiSpecCopy.Domain.Devices.Interfaces, vmIface.Name)
 			vmiIface.State = v1.InterfaceStateAbsent
 		}
@@ -82,4 +94,17 @@ func ClearDetachedInterfaces(specIfaces []v1.Interface, specNets []v1.Network, s
 	}
 
 	return ifaces, vmispec.FilterNetworksByInterfaces(specNets, ifaces)
+}
+
+func skipPersistentIPNetwork(networkClient k8scnicncfiov1.K8sCniCncfIoV1Interface, namespace string, network v1.Network) bool {
+	persistentIP, err := libipam.PersistentIPNetwork(networkClient, namespace, network)
+	if err != nil {
+		log.Log.Errorf("Failed determining persistentIP of network %s, err: %v", network.Name, err)
+		return true
+	}
+	if persistentIP {
+		log.Log.Errorf("Skipping hot{un}plug of persistentIP network %s, not supported yet", network.Name)
+		return true
+	}
+	return false
 }

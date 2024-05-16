@@ -35,10 +35,10 @@ import (
 	virtv1 "kubevirt.io/api/core/v1"
 
 	"kubevirt.io/kubevirt/pkg/libvmi"
+	"kubevirt.io/kubevirt/pkg/network/vmispec"
 	"kubevirt.io/kubevirt/pkg/pointer"
 	"kubevirt.io/kubevirt/pkg/virt-controller/ipamclaims"
-	ipclaimtypes "kubevirt.io/kubevirt/pkg/virt-controller/ipamclaims/types"
-	"kubevirt.io/kubevirt/pkg/virt-controller/network"
+	"kubevirt.io/kubevirt/pkg/virt-controller/ipamclaims/libipam"
 
 	fakenetworkclient "kubevirt.io/client-go/generated/network-attachment-definition-client/clientset/versioned/fake"
 
@@ -64,7 +64,7 @@ const (
 	nadNetworkName = "nad_network_name"
 )
 
-var _ = Describe("CreateIPAMClaims", func() {
+var _ = Describe("CreateNewPodIPAMClaims", func() {
 	var networkClient *fakenetworkclient.Clientset
 	var ipamClaimsClient *fakeipamclaimclient.Clientset
 	var vmi *virtv1.VirtualMachineInstance
@@ -232,7 +232,7 @@ var _ = Describe("GetNetworkToIPAMClaimParams", func() {
 		ipamClaimsManager := ipamclaims.NewIPAMClaimsManager(networkClient, ipamClaimsClient)
 		networkToIPAMClaimParams, err := ipamClaimsManager.GetNetworkToIPAMClaimParams(namespace, vmiName, networks)
 		Expect(err).ToNot(HaveOccurred())
-		Expect(networkToIPAMClaimParams).To(Equal(map[string]ipclaimtypes.IPAMClaimParams{
+		Expect(networkToIPAMClaimParams).To(Equal(map[string]libipam.IPAMClaimParams{
 			redNetworkLogicalName: {
 				ClaimName:   fmt.Sprintf("%s.%s", vmiName, redNetworkLogicalName),
 				NetworkName: nadNetworkName,
@@ -255,7 +255,7 @@ var _ = Describe("ExtractNetworkToIPAMClaimParams", func() {
 			},
 		}
 
-		expected := map[string]ipclaimtypes.IPAMClaimParams{
+		expected := map[string]libipam.IPAMClaimParams{
 			redNetworkLogicalName: {
 				ClaimName:   fmt.Sprintf("%s.%s", vmiName, redNetworkLogicalName),
 				NetworkName: "nad_network_name",
@@ -313,7 +313,7 @@ func createNADs(networkClient *fakenetworkclient.Clientset, namespace string, ne
 		if net.Multus == nil {
 			continue
 		}
-		ns, networkName := network.GetNamespaceAndNetworkName(namespace, net.NetworkSource.Multus.NetworkName)
+		ns, networkName := vmispec.GetNamespaceAndNetworkName(namespace, net.Multus.NetworkName)
 		nad := &networkv1.NetworkAttachmentDefinition{
 			ObjectMeta: v1.ObjectMeta{
 				Name:      networkName,

@@ -34,7 +34,7 @@ import (
 	"kubevirt.io/kubevirt/pkg/network/netbinding"
 	"kubevirt.io/kubevirt/pkg/network/vmispec"
 	virtconfig "kubevirt.io/kubevirt/pkg/virt-config"
-	ipclaimtypes "kubevirt.io/kubevirt/pkg/virt-controller/ipamclaims/types"
+	"kubevirt.io/kubevirt/pkg/virt-controller/ipamclaims/libipam"
 )
 
 type multusNetworkAnnotationPool struct {
@@ -57,11 +57,11 @@ func (mnap multusNetworkAnnotationPool) toString() (string, error) {
 	return string(multusNetworksAnnotation), nil
 }
 
-func GenerateMultusCNIAnnotation(namespace string, interfaces []v1.Interface, networks []v1.Network, networkToIPAMClaimParams map[string]ipclaimtypes.IPAMClaimParams, config *virtconfig.ClusterConfig) (string, error) {
+func GenerateMultusCNIAnnotation(namespace string, interfaces []v1.Interface, networks []v1.Network, networkToIPAMClaimParams map[string]libipam.IPAMClaimParams, config *virtconfig.ClusterConfig) (string, error) {
 	return GenerateMultusCNIAnnotationFromNameScheme(namespace, interfaces, networks, namescheme.CreateHashedNetworkNameScheme(networks), networkToIPAMClaimParams, config)
 }
 
-func GenerateMultusCNIAnnotationFromNameScheme(namespace string, interfaces []v1.Interface, networks []v1.Network, networkNameScheme map[string]string, networkToIPAMClaimParams map[string]ipclaimtypes.IPAMClaimParams, config *virtconfig.ClusterConfig) (string, error) {
+func GenerateMultusCNIAnnotationFromNameScheme(namespace string, interfaces []v1.Interface, networks []v1.Network, networkNameScheme map[string]string, networkToIPAMClaimParams map[string]libipam.IPAMClaimParams, config *virtconfig.ClusterConfig) (string, error) {
 	multusNetworkAnnotationPool := multusNetworkAnnotationPool{}
 
 	for _, network := range networks {

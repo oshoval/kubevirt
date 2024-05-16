@@ -63,7 +63,7 @@ import (
 	"kubevirt.io/kubevirt/pkg/util/hardware"
 	traceUtils "kubevirt.io/kubevirt/pkg/util/trace"
 	virtconfig "kubevirt.io/kubevirt/pkg/virt-config"
-	ipclaimtypes "kubevirt.io/kubevirt/pkg/virt-controller/ipamclaims/types"
+	"kubevirt.io/kubevirt/pkg/virt-controller/ipamclaims/libipam"
 	"kubevirt.io/kubevirt/pkg/virt-controller/services"
 )
 
@@ -1342,7 +1342,7 @@ func (c *VMIController) sync(vmi *virtv1.VirtualMachineInstance, pod *k8sv1.Pod,
 		if vmiSpecIfaces, vmiSpecNets, dynamicIfacesExist := network.CalculateInterfacesAndNetworksForMultusAnnotationUpdate(vmi); dynamicIfacesExist {
 			errMessage := fmt.Errorf("failed to hot{un}plug network interfaces for vmi [%s/%s]", vmi.GetNamespace(), vmi.GetName())
 
-			var networkToIPAMClaimParams map[string]ipclaimtypes.IPAMClaimParams
+			var networkToIPAMClaimParams map[string]libipam.IPAMClaimParams
 			if c.clusterConfig.PersistentIPsEnabled() {
 				var err error
 				networkToIPAMClaimParams, err = c.ipamClaimsManager.GetNetworkToIPAMClaimParams(
@@ -2426,7 +2426,7 @@ func (c *VMIController) getVolumePhaseMessageReason(volume *virtv1.Volume, names
 	return virtv1.VolumePending, PVCNotReadyReason, "PVC is in phase Lost"
 }
 
-func (c *VMIController) updateMultusAnnotation(namespace string, interfaces []virtv1.Interface, networks []virtv1.Network, pod *k8sv1.Pod, networkToIPAMClaimParams map[string]ipclaimtypes.IPAMClaimParams) error {
+func (c *VMIController) updateMultusAnnotation(namespace string, interfaces []virtv1.Interface, networks []virtv1.Network, pod *k8sv1.Pod, networkToIPAMClaimParams map[string]libipam.IPAMClaimParams) error {
 	podAnnotations := pod.GetAnnotations()
 
 	indexedMultusStatusIfaces := network.NonDefaultMultusNetworksIndexedByIfaceName(pod)

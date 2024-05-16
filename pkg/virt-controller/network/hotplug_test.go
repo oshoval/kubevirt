@@ -29,6 +29,8 @@ import (
 
 	v1 "kubevirt.io/api/core/v1"
 
+	fakenetworkclient "kubevirt.io/client-go/generated/network-attachment-definition-client/clientset/versioned/fake"
+
 	"kubevirt.io/kubevirt/pkg/libvmi"
 	"kubevirt.io/kubevirt/pkg/network/vmispec"
 	"kubevirt.io/kubevirt/pkg/virt-controller/network"
@@ -161,7 +163,8 @@ var _ = Describe("Network interface hot{un}plug", func() {
 	DescribeTable("apply dynamic interface request on VMI",
 		func(vmiForVM, currentVMI, expectedVMI *v1.VirtualMachineInstance, hasOrdinalIfaces bool) {
 			vm := virtualMachineFromVMI(currentVMI.Name, vmiForVM)
-			updatedVMI := network.ApplyDynamicIfaceRequestOnVMI(vm, currentVMI, hasOrdinalIfaces)
+			networkClient := fakenetworkclient.NewSimpleClientset()
+			updatedVMI := network.ApplyDynamicIfaceRequestOnVMI(networkClient.K8sCniCncfIoV1(), vm, currentVMI, hasOrdinalIfaces)
 			Expect(updatedVMI.Networks).To(Equal(expectedVMI.Spec.Networks))
 			Expect(updatedVMI.Domain.Devices.Interfaces).To(Equal(expectedVMI.Spec.Domain.Devices.Interfaces))
 		},

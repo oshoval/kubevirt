@@ -23,6 +23,8 @@ import (
 	"fmt"
 	"os"
 
+	"kubevirt.io/kubevirt/pkg/network/vmispec"
+
 	v1 "kubevirt.io/api/core/v1"
 	"kubevirt.io/client-go/log"
 	"kubevirt.io/client-go/precond"
@@ -57,7 +59,12 @@ func newPhase2PodNIC(vmi *v1.VirtualMachineInstance, network *v1.Network, iface 
 		return nil, err
 	}
 
-	ifaceLink, err := link.DiscoverByNetwork(podnic.handler, podnic.vmi.Spec.Networks, *podnic.vmiSpecNetwork)
+	podIfaceNamesByNetworkNames, err := vmispec.IndexPodIfacesNamesByNetworkName(vmi.Spec.Networks, vmi.Status.Interfaces)
+	if err != nil {
+		return nil, err
+	}
+
+	ifaceLink, err := link.LinkByName(podnic.handler, podIfaceNamesByNetworkNames[network.Name])
 	if err != nil {
 		return nil, err
 	}

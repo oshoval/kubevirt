@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"strings"
 
+	"kubevirt.io/kubevirt/pkg/network/vmispec"
+
 	k8sv1 "k8s.io/api/core/v1"
 
 	v1 "kubevirt.io/api/core/v1"
@@ -116,11 +118,15 @@ func getTapDevices(vmi *v1.VirtualMachineInstance, networkBindings map[string]v1
 		}
 	}
 
-	networkNameScheme := namescheme.CreateHashedNetworkNameScheme(vmi.Spec.Networks)
+	podIfaceNamesByNetworkNames, err := vmispec.IndexPodIfacesNamesByNetworkName(vmi.Spec.Networks, vmi.Status.Interfaces)
+	if err != nil {
+		return nil, err
+	}
+
 	tapDevices := map[string]string{}
 	for _, net := range vmi.Spec.Networks {
 		_, isTapNetwork := tapNetworks[net.Name]
-		if podInterfaceName, exists := networkNameScheme[net.Name]; isTapNetwork && exists {
+		if podInterfaceName, exists := podIfaceNamesByNetworkNames[net.Name]; isTapNetwork && exists {
 			tapDevices[net.Name] = podInterfaceName
 		} else if isTapNetwork && !exists {
 			return nil, fmt.Errorf("network %q not found in naming scheme: this should never happen", net.Name)

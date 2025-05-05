@@ -502,7 +502,7 @@ func (t *templateService) renderLaunchManifest(vmi *v1.VirtualMachineInstance, i
 	var sidecarVolumes []k8sv1.Volume
 	for i, requestedHookSidecar := range requestedHookSidecarList {
 		sidecarContainer := newSidecarContainerRenderer(
-			sidecarContainerName(i), vmi, sidecarResources(vmi, t.clusterConfig), requestedHookSidecar, userId).Render(requestedHookSidecar.Command)
+			i, vmi, sidecarResources(vmi, t.clusterConfig), requestedHookSidecar, userId).Render(requestedHookSidecar.Command)
 
 		if requestedHookSidecar.ConfigMap != nil {
 			cm, err := t.virtClient.CoreV1().ConfigMaps(vmi.Namespace).Get(context.TODO(), requestedHookSidecar.ConfigMap.Name, metav1.GetOptions{})
@@ -540,6 +540,11 @@ func (t *templateService) renderLaunchManifest(vmi *v1.VirtualMachineInstance, i
 					})
 			}
 		}
+		sidecarContainer.Env = []k8sv1.EnvVar{
+			k8sv1.EnvVar{
+				Name:  "CONTAINER_NAME",
+				Value: sidecarContainerName(i),
+			}}
 		containers = append(containers, sidecarContainer)
 	}
 
@@ -726,14 +731,14 @@ func initContainerVolumeMount() k8sv1.VolumeMount {
 	}
 }
 
-func newSidecarContainerRenderer(sidecarName string, vmiSpec *v1.VirtualMachineInstance, resources k8sv1.ResourceRequirements, requestedHookSidecar hooks.HookSidecar, userId int64) *ContainerSpecRenderer {
+func newSidecarContainerRenderer(sidecarIndex int, vmiSpec *v1.VirtualMachineInstance, resources k8sv1.ResourceRequirements, requestedHookSidecar hooks.HookSidecar, userId int64) *ContainerSpecRenderer {
 	sidecarOpts := []Option{
 		WithResourceRequirements(resources),
 		WithArgs(requestedHookSidecar.Args),
 	}
 
 	var mounts []k8sv1.VolumeMount
-	mounts = append(mounts, sidecarVolumeMount())
+	mounts = append(mounts, sidecarVolumeMount(sidecarIndex))
 	if requestedHookSidecar.DownwardAPI == v1.DeviceInfo {
 		mounts = append(mounts, mountPath(downwardapi.NetworkInfoVolumeName, downwardapi.MountPath))
 	}
@@ -754,7 +759,7 @@ func newSidecarContainerRenderer(sidecarName string, vmiSpec *v1.VirtualMachineI
 	}
 
 	return NewContainerSpecRenderer(
-		sidecarName,
+		sidecarContainerName(sidecarIndex),
 		requestedHookSidecar.Image,
 		requestedHookSidecar.ImagePullPolicy,
 		sidecarOpts...)
@@ -868,10 +873,11 @@ func (t *templateService) newResourceRenderer(vmi *v1.VirtualMachineInstance, ne
 	return NewResourceRenderer(vmiResources.Limits, vmiResources.Requests, options...), nil
 }
 
-func sidecarVolumeMount() k8sv1.VolumeMount {
+func sidecarVolumeMount(sidecarIndex int) k8sv1.VolumeMount {
 	return k8sv1.VolumeMount{
 		Name:      hookSidecarSocks,
 		MountPath: hooks.HookSocketsSharedDirectory,
+		SubPath:   strconv.Itoa(sidecarIndex),
 	}
 }
 

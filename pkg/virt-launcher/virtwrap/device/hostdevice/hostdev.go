@@ -21,6 +21,7 @@ package hostdevice
 
 import (
 	"fmt"
+	"runtime/debug"
 	"strings"
 
 	v1 "kubevirt.io/api/core/v1"
@@ -116,6 +117,7 @@ func createHostDevices(hostDevicesData []HostDeviceMetaData, addrPool AddressPoo
 	}
 
 	if len(hostDevices) > 0 {
+		debug.PrintStack()
 		log.Log.Infof("host-devices created: [%s]", strings.Join(hostDevicesAddresses, ", "))
 	}
 

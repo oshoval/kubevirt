@@ -399,6 +399,7 @@ func (l *Launcher) FinalizeVirtualMachineMigration(_ context.Context, request *c
 }
 
 func (l *Launcher) HotplugHostDevices(_ context.Context, request *cmdv1.VMIRequest) (*cmdv1.Response, error) {
+	log.Log.V(3).Info("HotplugHostDevices called")
 	vmi, response := getVMIFromRequest(request.Vmi)
 	if !response.Success {
 		return response, nil

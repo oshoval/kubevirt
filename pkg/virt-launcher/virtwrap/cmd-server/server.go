@@ -24,6 +24,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path"
 	"time"
 
 	"google.golang.org/grpc"
@@ -34,6 +35,7 @@ import (
 	"kubevirt.io/client-go/log"
 
 	cmdv1 "kubevirt.io/kubevirt/pkg/handler-launcher-com/cmd/v1"
+	"kubevirt.io/kubevirt/pkg/network/downwardapi"
 	grpcutil "kubevirt.io/kubevirt/pkg/util/net/grpc"
 	cmdclient "kubevirt.io/kubevirt/pkg/virt-handler/cmd-client"
 	"kubevirt.io/kubevirt/pkg/virt-launcher/virtwrap"
@@ -381,6 +383,8 @@ func (l *Launcher) DeleteVirtualMachine(_ context.Context, request *cmdv1.VMIReq
 	return response, nil
 }
 
+var Migration_done bool = false
+
 func (l *Launcher) FinalizeVirtualMachineMigration(_ context.Context, request *cmdv1.VMIRequest) (*cmdv1.Response, error) {
 	vmi, response := getVMIFromRequest(request.Vmi)
 	if !response.Success {
@@ -395,11 +399,30 @@ func (l *Launcher) FinalizeVirtualMachineMigration(_ context.Context, request *c
 	}
 
 	log.Log.Object(vmi).Info("migration finalized successfully")
+	Migration_done = true
+
 	return response, nil
 }
 
 func (l *Launcher) HotplugHostDevices(_ context.Context, request *cmdv1.VMIRequest) (*cmdv1.Response, error) {
 	log.Log.V(3).Info("HotplugHostDevices called")
+
+	if Migration_done == true {
+		netStatusPath := path.Join(downwardapi.MountPath, downwardapi.NetworkInfoVolumePath)
+		if _, err := os.Stat(netStatusPath); err == nil {
+			err = os.Remove(netStatusPath)
+			if err != nil {
+				log.Log.V(3).Info("DBG, cant delete file even that it exist")
+			} else {
+				log.Log.V(3).Info("DBG!, deleted file")
+			}
+		} else if errors.Is(err, os.ErrNotExist) {
+			log.Log.V(3).Info("DBG, file doesnt exist")
+		} else {
+			log.Log.V(3).Infof("DBG, other error %s", err)
+		}
+	}
+
 	vmi, response := getVMIFromRequest(request.Vmi)
 	if !response.Success {
 		return response, nil

@@ -39,6 +39,8 @@ import (
 	"kubevirt.io/kubevirt/pkg/virt-launcher/virtwrap/device/hostdevice"
 )
 
+var times int = 0
+
 func CreateHostDevices(vmi *v1.VirtualMachineInstance) ([]api.HostDevice, error) {
 	SRIOVInterfaces := vmispec.FilterInterfacesSpec(vmi.Spec.Domain.Devices.Interfaces, func(iface v1.Interface) bool {
 		if iface.SRIOV == nil {
@@ -50,7 +52,18 @@ func CreateHostDevices(vmi *v1.VirtualMachineInstance) ([]api.HostDevice, error)
 	if len(SRIOVInterfaces) == 0 {
 		return []api.HostDevice{}, nil
 	}
+
 	netStatusPath := path.Join(downwardapi.MountPath, downwardapi.NetworkInfoVolumePath)
+	// if cmdserver.Migration_done {
+	// 	netStatusPath = path.Join(downwardapi.MountPath, "bla")
+	// }
+
+	// if times < 10 {
+	// 	times++
+	// 	netStatusPath = path.Join(downwardapi.MountPath, "bla")
+	// 	log.Log.V(3).Info("DBG: faking file NA")
+	// }
+
 	pciAddressPoolWithNetworkStatus, err := newPCIAddressPoolWithNetworkStatusFromFile(netStatusPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create SR-IOV hostdevices: %v", err)

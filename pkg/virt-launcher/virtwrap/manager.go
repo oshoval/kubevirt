@@ -586,6 +586,8 @@ func (l *LibvirtDomainManager) HotplugHostDevices(vmi *v1.VirtualMachineInstance
 	return nil
 }
 
+var times = 0
+
 func (l *LibvirtDomainManager) hotPlugHostDevices(vmi *v1.VirtualMachineInstance) error {
 	l.domainModifyLock.Lock()
 	defer l.domainModifyLock.Unlock()
@@ -610,6 +612,14 @@ func (l *LibvirtDomainManager) hotPlugHostDevices(vmi *v1.VirtualMachineInstance
 	}
 
 	log.Log.V(3).Infof("sriov host devices to attach %+v", sriovHostDevices)
+
+	////
+	if times < 10 {
+		times++
+		log.Log.Infof("DBG: Injecting error %d", times)
+		return fmt.Errorf("DBG: Injecting error %d", times)
+	}
+
 	if err := hostdevice.AttachHostDevices(domain, sriovHostDevices); err != nil {
 		return fmt.Errorf("%s: %v", errMsgPrefix, hostdevice.AttachHostDevices(domain, sriovHostDevices))
 	}
@@ -1088,6 +1098,7 @@ func (l *LibvirtDomainManager) generateConverterContext(vmi *v1.VirtualMachineIn
 		c.HotplugVolumes = hotplugVolumes
 		c.SRIOVDevices = sriovDevices
 
+		// This one
 		genericHostDevices, err := generic.CreateHostDevices(vmi.Spec.Domain.Devices.HostDevices)
 		if err != nil {
 			return nil, err

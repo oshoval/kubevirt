@@ -87,8 +87,16 @@ func newPCIAddressPoolWithNetworkStatusFromFile(path string) (*PCIAddressWithNet
 	return pciPool, nil
 }
 
+var first = true
+
 func readFileUntilNotEmpty(networkPCIMapPath string) ([]byte, error) {
 	var networkPCIMapBytes []byte
+
+	if first {
+		first = false
+		return nil, fmt.Errorf("INJECT ERROR: file is not populated with network-info")
+	}
+
 	err := virtwait.PollImmediately(100*time.Millisecond, time.Second, func(_ context.Context) (bool, error) {
 		var err error
 		networkPCIMapBytes, err = os.ReadFile(networkPCIMapPath)

@@ -15,7 +15,7 @@ go_library(
 )
 
 go_binary(
-    name = "kubevirt-passt-binding",
+    name = "network-passt-binding",
     embed = [":go_default_library"],
     static = "on",
     visibility = ["//visibility:public"],

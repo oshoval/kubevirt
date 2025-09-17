@@ -21,6 +21,7 @@ package migration
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"maps"
@@ -31,6 +32,7 @@ import (
 	"sync"
 	"time"
 
+	networkv1 "github.com/k8snetworkplumbingwg/network-attachment-definition-client/pkg/apis/k8s.cni.cncf.io/v1"
 	"github.com/opencontainers/selinux/go-selinux"
 
 	k8sv1 "k8s.io/api/core/v1"
@@ -46,6 +48,10 @@ import (
 	"k8s.io/client-go/util/workqueue"
 
 	"kubevirt.io/kubevirt/pkg/apimachinery/patch"
+	"kubevirt.io/kubevirt/pkg/network/deviceinfo"
+	"kubevirt.io/kubevirt/pkg/network/downwardapi"
+	"kubevirt.io/kubevirt/pkg/network/multus"
+	"kubevirt.io/kubevirt/pkg/network/vmispec"
 	"kubevirt.io/kubevirt/pkg/pointer"
 	"kubevirt.io/kubevirt/pkg/tpm"
 	"kubevirt.io/kubevirt/pkg/util"
@@ -1058,6 +1064,93 @@ func (c *Controller) getNodeSelectorsFromNodeName(nodeName string) (map[string]s
 	return res, nil
 }
 
+// updateTargetPodNetworkInfo regenerates the network-info annotation from the target pod's network-status
+func (c *Controller) updateTargetPodNetworkInfo(vmi *virtv1.VirtualMachineInstance, pod *k8sv1.Pod) error {
+	// Check if the pod has network-status annotation (populated by Multus/CNI)
+	networkStatus := multus.NetworkStatusesFromPod(pod)
+	if len(networkStatus) == 0 {
+		// Network status not available yet, skip for now
+		log.Log.Object(vmi).V(4).Infof("Target pod %s/%s does not have network-status annotation yet, skipping network-info update", pod.Namespace, pod.Name)
+		return nil
+	}
+
+	// Filter interfaces that need device info (only binding plugins with downward API)
+	ifaces := vmispec.FilterInterfacesSpec(vmi.Spec.Domain.Devices.Interfaces, func(iface virtv1.Interface) bool {
+		if iface.Binding == nil {
+			return false
+		}
+
+		bindingPlugins := c.clusterConfig.GetNetworkBindings()
+		if bindingPlugin, exists := bindingPlugins[iface.Binding.Name]; exists {
+			// Only include if the binding plugin has downward API enabled for device-info
+			return bindingPlugin.DownwardAPI == virtv1.DeviceInfo
+		}
+		return false
+	})
+
+	if len(ifaces) == 0 {
+		// No interfaces that need device info
+		return nil
+	}
+
+	// Generate network device info map from the target pod's network status
+	networkDeviceInfoMap := deviceinfo.MapNetworkNameToDeviceInfo(vmi.Spec.Networks, ifaces, networkStatus)
+	if len(networkDeviceInfoMap) == 0 {
+		// No device info to add
+		return nil
+	}
+
+	// Filter to only include vhost-user device info
+	vhostUserDeviceInfoMap := make(map[string]*networkv1.DeviceInfo)
+	for networkName, deviceInfo := range networkDeviceInfoMap {
+		if deviceInfo != nil && deviceInfo.Type == "vhost-user" {
+			vhostUserDeviceInfoMap[networkName] = deviceInfo
+		}
+	}
+
+	if len(vhostUserDeviceInfoMap) == 0 {
+		// No vhost-user device info to add
+		return nil
+	}
+
+	networkDeviceInfoMap = vhostUserDeviceInfoMap
+
+	// Create the network-info annotation value
+	networkInfoValue := downwardapi.CreateNetworkInfoAnnotationValue(networkDeviceInfoMap)
+	if networkInfoValue == "" {
+		return nil
+	}
+
+	// Check if the annotation needs to be updated
+	currentNetworkInfo := pod.Annotations[downwardapi.NetworkInfoAnnot]
+	if currentNetworkInfo == networkInfoValue {
+		// Already up to date
+		return nil
+	}
+
+	// Create a strategic merge patch to update the annotation
+	patchData := map[string]interface{}{
+		"metadata": map[string]interface{}{
+			"annotations": map[string]string{
+				downwardapi.NetworkInfoAnnot: networkInfoValue,
+			},
+		},
+	}
+
+	patchBytes, err := json.Marshal(patchData)
+	if err != nil {
+		return fmt.Errorf("failed to marshal patch data for network-info annotation: %v", err)
+	}
+
+	_, err = c.clientset.CoreV1().Pods(pod.Namespace).Patch(context.Background(), pod.Name, types.StrategicMergePatchType, patchBytes, v1.PatchOptions{})
+	if err != nil {
+		return fmt.Errorf("failed to update network-info annotation on target pod %s/%s: %v", pod.Namespace, pod.Name, err)
+	}
+
+	log.Log.Object(vmi).Infof("Updated network-info annotation on target pod %s/%s with device info from network-status", pod.Namespace, pod.Name)
+	return nil
+}
+
 func (c *Controller) handleTargetPodHandoff(migration *virtv1.VirtualMachineInstanceMigration, vmi *virtv1.VirtualMachineInstance, pod *k8sv1.Pod) error {
 
 	if vmi.IsMigrationSynchronized(migration) && vmi.Status.MigrationState.MigrationUID == migration.UID {
@@ -1576,6 +1669,10 @@ func (c *Controller) sync(key string, migration *virtv1.VirtualMachineInstanceMi
 		// once target pod is running, then alert the VMI of the migration by
 		// setting the target and source nodes. This kicks off the preparation stage.
 		if targetPodExists && controller.IsPodReady(pod) {
+			if err := c.updateTargetPodNetworkInfo(vmi, pod); err != nil {
+				log.Log.Object(vmi).Reason(err).Warning("Failed to update network-info annotation on target pod")
+				// Don't fail the migration for this, just log the warning and continue
+			}
 			return c.handleTargetPodHandoff(migration, vmi, pod)
 		}
 	case virtv1.MigrationPreparingTarget, virtv1.MigrationTargetReady, virtv1.MigrationFailed:

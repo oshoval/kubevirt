@@ -5748,3 +5748,7 @@ type stubTargetAnnotationsGenerator struct {
 func (stag stubTargetAnnotationsGenerator) GenerateFromSource(_ *v1.VirtualMachineInstance, _ *k8sv1.Pod) (map[string]string, error) {
 	return stag.annotations, stag.generationErr
 }
+
+func (stag stubTargetAnnotationsGenerator) GenerateFromActivePod(_ *v1.VirtualMachineInstance, _ *k8sv1.Pod) map[string]string {
+	return stag.annotations
+}

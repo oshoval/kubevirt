@@ -131,8 +131,9 @@ type annotationsGenerator interface {
 	Generate(vmi *v1.VirtualMachineInstance) (map[string]string, error)
 }
 
-type targetAnnotationsGenerator interface {
+type TargetAnnotationsGenerator interface {
 	GenerateFromSource(vmi *v1.VirtualMachineInstance, sourcePod *k8sv1.Pod) (map[string]string, error)
+	GenerateFromActivePod(vmi *v1.VirtualMachineInstance, pod *k8sv1.Pod) map[string]string
 }
 
 type TemplateService struct {
@@ -154,7 +155,7 @@ type TemplateService struct {
 	sidecarCreators                  []SidecarCreatorFunc
 	netBindingPluginMemoryCalculator netBindingPluginMemoryCalculator
 	annotationsGenerators            []annotationsGenerator
-	netTargetAnnotationsGenerator    targetAnnotationsGenerator
+	NetTargetAnnotationsGenerator    TargetAnnotationsGenerator
 }
 
 func isFeatureStateEnabled(fs *v1.FeatureState) bool {
@@ -261,6 +262,10 @@ func (t *TemplateService) RenderLaunchManifestNoVm(vmi *v1.VirtualMachineInstanc
 	return t.renderLaunchManifest(vmi, nil, backendStoragePVCName, true)
 }
 
+func (t *TemplateService) GetNetTargetAnnotationsGenerator() TargetAnnotationsGenerator {
+	return t.NetTargetAnnotationsGenerator
+}
+
 func (t *TemplateService) RenderMigrationManifest(vmi *v1.VirtualMachineInstance, migration *v1.VirtualMachineInstanceMigration, sourcePod *k8sv1.Pod) (*k8sv1.Pod, error) {
 	reproducibleImageIDs, err := containerdisk.ExtractImageIDsFromSourcePod(vmi, sourcePod)
 	if err != nil {
@@ -279,8 +284,8 @@ func (t *TemplateService) RenderMigrationManifest(vmi *v1.VirtualMachineInstance
 		return nil, err
 	}
 
-	if t.netTargetAnnotationsGenerator != nil {
-		netAnnotations, err := t.netTargetAnnotationsGenerator.GenerateFromSource(vmi, sourcePod)
+	if t.NetTargetAnnotationsGenerator != nil {
+		netAnnotations, err := t.NetTargetAnnotationsGenerator.GenerateFromSource(vmi, sourcePod)
 		if err != nil {
 			return nil, err
 		}
@@ -1591,9 +1596,9 @@ func WithAnnotationsGenerators(generators ...annotationsGenerator) templateServi
 	}
 }
 
-func WithNetTargetAnnotationsGenerator(generator targetAnnotationsGenerator) templateServiceOption {
+func WithNetTargetAnnotationsGenerator(generator TargetAnnotationsGenerator) templateServiceOption {
 	return func(service *TemplateService) {
-		service.netTargetAnnotationsGenerator = generator
+		service.NetTargetAnnotationsGenerator = generator
 	}
 }
 

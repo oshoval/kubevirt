@@ -21,6 +21,7 @@ package migration
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"maps"
@@ -47,6 +48,7 @@ import (
 	"k8s.io/utils/trace"
 
 	"kubevirt.io/kubevirt/pkg/apimachinery/patch"
+	"kubevirt.io/kubevirt/pkg/network/downwardapi"
 	"kubevirt.io/kubevirt/pkg/pointer"
 	"kubevirt.io/kubevirt/pkg/tpm"
 	"kubevirt.io/kubevirt/pkg/util"
@@ -108,6 +110,7 @@ type templateService interface {
 	RenderLaunchManifest(vmi *virtv1.VirtualMachineInstance) (*k8sv1.Pod, error)
 	RenderHotplugAttachmentPodTemplate(volumes []*virtv1.Volume, ownerPod *k8sv1.Pod, vmi *virtv1.VirtualMachineInstance, claimMap map[string]*k8sv1.PersistentVolumeClaim) (*k8sv1.Pod, error)
 	GetLauncherImage() string
+	GetNetTargetAnnotationsGenerator() services.TargetAnnotationsGenerator
 }
 
 type Controller struct {
@@ -1069,6 +1072,39 @@ func (c *Controller) getNodeSelectorsFromNodeName(nodeName string) (map[string]s
 	return res, nil
 }
 
+// updateTargetPodNetworkInfo generates the network-info annotation from the target pod's network-status
+func (c *Controller) updateTargetPodNetworkInfo(vmi *virtv1.VirtualMachineInstance, pod *k8sv1.Pod) error {
+	generator := c.templateService.GetNetTargetAnnotationsGenerator()
+	generatedAnnotations := generator.GenerateFromActivePod(vmi, pod)
+
+	networkInfoValue, hasNetworkInfo := generatedAnnotations[downwardapi.NetworkInfoAnnot]
+	if !hasNetworkInfo {
+		return nil
+	}
+
+	if pod.Annotations[downwardapi.NetworkInfoAnnot] == networkInfoValue {
+		return nil
+	}
+
+	patchBytes, err := json.Marshal(map[string]any{
+		"metadata": map[string]any{
+			"annotations": map[string]string{
+				downwardapi.NetworkInfoAnnot: networkInfoValue,
+			},
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("failed to marshal patch data for network-info annotation: %v", err)
+	}
+
+	_, err = c.clientset.CoreV1().Pods(pod.Namespace).Patch(context.Background(), pod.Name, types.StrategicMergePatchType, patchBytes, v1.PatchOptions{})
+	if err != nil {
+		return fmt.Errorf("failed to update network-info annotation on target pod %s/%s: %v", pod.Namespace, pod.Name, err)
+	}
+
+	return nil
+}
+
 func (c *Controller) handleTargetPodHandoff(migration *virtv1.VirtualMachineInstanceMigration, vmi *virtv1.VirtualMachineInstance, pod *k8sv1.Pod) error {
 
 	if vmi.IsMigrationSynchronized(migration) && vmi.Status.MigrationState.MigrationUID == migration.UID {
@@ -1587,6 +1623,9 @@ func (c *Controller) sync(key string, migration *virtv1.VirtualMachineInstanceMi
 		// once target pod is running, then alert the VMI of the migration by
 		// setting the target and source nodes. This kicks off the preparation stage.
 		if targetPodExists && controller.IsPodReady(pod) {
+			if err := c.updateTargetPodNetworkInfo(vmi, pod); err != nil {
+				return err
+			}
 			return c.handleTargetPodHandoff(migration, vmi, pod)
 		}
 	case virtv1.MigrationPreparingTarget, virtv1.MigrationTargetReady, virtv1.MigrationFailed:

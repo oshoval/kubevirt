@@ -36,6 +36,7 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
+	"k8s.io/dynamic-resource-allocation/deviceattribute"
 	"k8s.io/utils/trace"
 	v1 "kubevirt.io/api/core/v1"
 	"kubevirt.io/client-go/kubecli"
@@ -53,7 +54,7 @@ const (
 	tombstoneGetObjectErrFmt = "couldn't get object from tombstone %+v"
 
 	indexByNodeName              = "byNodeName"
-	PCIAddressDeviceAttributeKey = "resource.kubernetes.io/pcieRoot"
+	PCIAddressDeviceAttributeKey = deviceattribute.StandardDeviceAttributePrefix + "pciAddress"
 	MDevUUIDDeviceAttributeKey   = "resource.kubernetes.io/mDevUUID"
 )
 

@@ -43,6 +43,13 @@ const (
 	logTimestampFormat     = "2006-01-02T15:04:05.000000Z"
 )
 
+var noisyLibvirtErrors = []string{
+	"internal error: Unable to get system bus connection: Could not connect: No such file or directory",
+	`internal error: Unable to get session bus connection: Cannot spawn a message bus without a machine-id: Unable to load /var/lib/dbus/machine-id or /etc/machine-id: Failed to open file`,
+	"Unable to open /dev/kvm: Permission denied",
+	"is tainted: custom-ga-command",
+}
+
 type LogLevel int32
 
 const (
@@ -381,6 +388,16 @@ func LogLibvirtLogLine(logger *FilteredLogger, line string) {
 		}
 
 		severity = LogLevelNames[WARNING]
+	}
+
+	// Filter noisy libvirt errors expected in containerized environments
+	for _, noisyError := range noisyLibvirtErrors {
+		if strings.Contains(msg, noisyError) {
+			if logger.verbosityLevel < 3 {
+				return
+			}
+			break
+		}
 	}
 
 	// check if we really got a position

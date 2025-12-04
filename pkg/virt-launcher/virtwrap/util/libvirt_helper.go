@@ -209,13 +209,11 @@ func GetDomainSpecWithFlags(dom cli.VirDomain, flags libvirt.DomainXMLFlags) (*a
 	return domain, nil
 }
 
-func (l LibvirtWrapper) StartVirtqemud(stopChan chan struct{}, allowEmulation bool) {
+func (l LibvirtWrapper) StartVirtqemud(stopChan chan struct{}) {
 	// we spawn libvirt from virt-launcher in order to ensure the virtqemud+qemu process
 	// doesn't exit until virt-launcher is ready for it to. Virt-launcher traps signals
 	// to perform special shutdown logic. These processes need to live in the same
 	// container.
-
-	waitForKVMDeviceOwnership(stopChan, allowEmulation)
 
 	go func() {
 		for {
@@ -529,7 +527,7 @@ func (l LibvirtWrapper) SetupLibvirt(customLogFilters *string) (err error) {
 	return nil
 }
 
-func waitForKVMDeviceOwnership(stopChan chan struct{}, allowEmulation bool) {
+func WaitForKVMDeviceOwnership(stopChan chan struct{}, allowEmulation bool) {
 	const kvmPath = "/dev/kvm"
 
 	if _, err := os.Stat(kvmPath); err != nil {

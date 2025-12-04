@@ -23,6 +23,7 @@ import (
 	"context"
 	goflag "flag"
 	"fmt"
+	"net"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -76,6 +77,41 @@ func markReady() {
 		panic(err)
 	}
 	log.Log.Info("Marked as ready")
+}
+
+func startCmdServerWithSocket(sock net.Listener, socketPath string,
+	domainManager virtwrap.DomainManager,
+	stopChan chan struct{},
+	options *cmdserver.ServerOptions) chan struct{} {
+	done, err := cmdserver.RunServerWithSocket(sock, socketPath, domainManager, stopChan, options)
+	if err != nil {
+		log.Log.Reason(err).Error("Failed to start virt-launcher cmd server")
+		panic(err)
+	}
+
+	// ensure the cmdserver is responsive before continuing
+	// PollImmediate breaks the poll loop when bool or err are returned OR if timeout occurs.
+	//
+	// Timing out causes an error to be returned
+	err = virtwait.PollImmediately(1*time.Second, 15*time.Second, func(_ context.Context) (bool, error) {
+		client, err := cmdclient.NewClient(socketPath)
+		if err != nil {
+			return false, nil
+		}
+		defer client.Close()
+
+		err = client.Ping()
+		if err != nil {
+			return false, nil
+		}
+		return true, nil
+	})
+
+	if err != nil {
+		panic(fmt.Errorf("failed to connect to cmd server: %v", err))
+	}
+
+	return done
 }
 
 func startCmdServer(socketPath string,
@@ -403,16 +439,57 @@ func main() {
 		panic(err)
 	}
 
-	// Start virtqemud, virtlogd, and establish libvirt connection
-	stopChan := make(chan struct{})
+	// Create socket early for virt-handler pod detection (just file, no gRPC yet)
+	cmdclient.SetBaseDir(*virtShareDir)
+	earlySocketPath := cmdclient.UninitializedSocketOnGuest()
+	if err := os.MkdirAll(filepath.Dir(earlySocketPath), 0755); err != nil {
+		panic(err)
+	}
+	earlySocket, err := net.Listen("unix", earlySocketPath)
+	if err != nil {
+		panic(err)
+	}
 
+	// Accept connections on early socket (for virt-handler's PID detection via SO_PEERCRED)
+	// Keep connections open briefly then close them
+	earlySocketStop := make(chan struct{})
+	earlySocketStopped := make(chan struct{})
+	go func() {
+		defer close(earlySocketStopped)
+		for {
+			conn, err := earlySocket.Accept()
+			if err != nil {
+				return // Socket closed or error
+			}
+
+			// Check if we should stop AFTER accepting
+			select {
+			case <-earlySocketStop:
+				conn.Close() // Close this last connection
+				return
+			default:
+			}
+
+			// Keep connection alive briefly for PID detection, then close
+			go func(c net.Conn) {
+				time.Sleep(100 * time.Millisecond)
+				c.Close()
+			}(conn)
+		}
+	}()
+
+	// Wait for /dev/kvm ownership (socket exists, virt-handler can detect us)
+	stopChan := make(chan struct{})
+	util.WaitForKVMDeviceOwnership(stopChan, *allowEmulation)
+
+	// Start virtqemud, virtlogd, and establish libvirt connection
 	l := util.NewLibvirtWrapper(*runWithNonRoot)
 	err = l.SetupLibvirt(libvirtLogFilters)
 	if err != nil {
 		panic(err)
 	}
 
-	l.StartVirtqemud(stopChan, *allowEmulation)
+	l.StartVirtqemud(stopChan)
 	// only single domain should be present
 	domainName := api.VMINamespaceKeyFunc(vmi)
 
@@ -434,12 +511,14 @@ func main() {
 		panic(err)
 	}
 
-	// Start the virt-launcher command service.
-	// Clients can use this service to tell virt-launcher
-	// to start/stop virtual machines
+	// Stop early accept loop
+	// Note: Don't wait for it to exit - it might be blocked in Accept()
+	// Having both loops briefly accept in parallel is safe (thread-safe queue behavior)
+	close(earlySocketStop)
+
+	// Attach real gRPC server to socket (both will accept until early loop exits)
 	options := cmdserver.NewServerOptions(*allowEmulation)
-	cmdclient.SetBaseDir(*virtShareDir)
-	cmdServerDone := startCmdServer(cmdclient.UninitializedSocketOnGuest(), domainManager, stopChan, options)
+	cmdServerDone := startCmdServerWithSocket(earlySocket, cmdclient.UninitializedSocketOnGuest(), domainManager, stopChan, options)
 
 	gracefulShutdownCallback := func() {
 		domainManager.MarkGracefulShutdownVMI()

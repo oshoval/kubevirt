@@ -23,6 +23,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"time"
 
@@ -616,7 +617,30 @@ func (l *Launcher) GuestPing(ctx context.Context, request *cmdv1.GuestPingReques
 	return resp, nil
 }
 
+func RunServerWithSocket(existingSocket net.Listener, socketPath string,
+	domainManager virtwrap.DomainManager,
+	stopChan chan struct{},
+	options *ServerOptions) (chan struct{}, error) {
+
+	// Use existing socket instead of creating new one
+	return runServerOnSocket(existingSocket, socketPath, domainManager, stopChan, options)
+}
+
 func RunServer(socketPath string,
+	domainManager virtwrap.DomainManager,
+	stopChan chan struct{},
+	options *ServerOptions) (chan struct{}, error) {
+
+	// Create new socket
+	sock, err := grpcutil.CreateSocket(socketPath)
+	if err != nil {
+		return nil, err
+	}
+
+	return runServerOnSocket(sock, socketPath, domainManager, stopChan, options)
+}
+
+func runServerOnSocket(sock net.Listener, socketPath string,
 	domainManager virtwrap.DomainManager,
 	stopChan chan struct{},
 	options *ServerOptions) (chan struct{}, error) {
@@ -636,11 +660,6 @@ func RunServer(socketPath string,
 	// register more versions as soon as needed
 	// and add them to info.go
 	cmdv1.RegisterCmdServer(grpcServer, server)
-
-	sock, err := grpcutil.CreateSocket(socketPath)
-	if err != nil {
-		return nil, err
-	}
 
 	done := make(chan struct{})
 

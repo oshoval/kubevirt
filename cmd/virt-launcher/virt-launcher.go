@@ -412,7 +412,7 @@ func main() {
 		panic(err)
 	}
 
-	l.StartVirtqemud(stopChan)
+	l.StartVirtqemud(stopChan, *allowEmulation)
 	// only single domain should be present
 	domainName := api.VMINamespaceKeyFunc(vmi)
 

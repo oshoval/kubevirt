@@ -209,11 +209,13 @@ func GetDomainSpecWithFlags(dom cli.VirDomain, flags libvirt.DomainXMLFlags) (*a
 	return domain, nil
 }
 
-func (l LibvirtWrapper) StartVirtqemud(stopChan chan struct{}) {
+func (l LibvirtWrapper) StartVirtqemud(stopChan chan struct{}, allowEmulation bool) {
 	// we spawn libvirt from virt-launcher in order to ensure the virtqemud+qemu process
 	// doesn't exit until virt-launcher is ready for it to. Virt-launcher traps signals
 	// to perform special shutdown logic. These processes need to live in the same
 	// container.
+
+	waitForKVMDeviceOwnership(stopChan, allowEmulation)
 
 	go func() {
 		for {
@@ -525,6 +527,54 @@ func (l LibvirtWrapper) SetupLibvirt(customLogFilters *string) (err error) {
 	}
 
 	return nil
+}
+
+func waitForKVMDeviceOwnership(stopChan chan struct{}, allowEmulation bool) {
+	const kvmPath = "/dev/kvm"
+
+	if _, err := os.Stat(kvmPath); err != nil {
+		if allowEmulation {
+			log.Log.Infof("%s not found, skipping ownership wait (emulation enabled)", kvmPath)
+		} else {
+			log.Log.Errorf("%s not found, skipping ownership wait", kvmPath)
+		}
+		return
+	}
+
+	timeout := 3 * time.Second
+	timeoutChan := time.After(timeout)
+
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+
+	startTime := time.Now()
+	for {
+		info, err := os.Stat(kvmPath)
+		if err != nil {
+			log.Log.Reason(err).Errorf("failed to stat %s", kvmPath)
+			break
+		}
+		stat, ok := info.Sys().(*syscall.Stat_t)
+		if ok && stat.Uid == util.NonRootUID {
+			elapsed := time.Since(startTime)
+			log.Log.Infof("%s ownership is correct (uid %d) after waiting %v", kvmPath, util.NonRootUID, elapsed)
+			break
+		}
+
+		select {
+		case <-stopChan:
+			return
+		case <-timeoutChan:
+			if allowEmulation {
+				log.Log.Warningf("Timeout waiting for %s ownership after %v, proceeding with emulation", kvmPath, timeout)
+			} else {
+				log.Log.Warningf("Timeout waiting for %s ownership after %v, proceeding anyway", kvmPath, timeout)
+			}
+			return
+		case <-ticker.C:
+			continue
+		}
+	}
 }
 
 // getLibvirtLogFilters returns libvirt debug log filters that should be enabled if enableDebugLogs is true.

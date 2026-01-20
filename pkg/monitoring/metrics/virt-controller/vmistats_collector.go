@@ -48,7 +48,7 @@ const (
 )
 
 var (
-	whitelistedInstanceTypeVendors = map[string]bool{
+	allowlistedInstanceTypeVendors = map[string]bool{
 		"kubevirt.io": true,
 		"redhat.com":  true,
 	}
@@ -335,7 +335,7 @@ func fetchResourceName(key string, store cache.Store) string {
 	}
 
 	vendorName := apiObj.GetLabels()[instancetypeVendorLabel]
-	if _, isWhitelisted := whitelistedInstanceTypeVendors[vendorName]; isWhitelisted {
+	if _, isAllowlisted := allowlistedInstanceTypeVendors[vendorName]; isAllowlisted {
 		return apiObj.GetName()
 	}
 

@@ -116,7 +116,7 @@ func main() {
 	sidecarShimImage := flag.String("sidecar-shim-image", "", "custom image for sidecar-shim. "+customImageExample)
 
 	pflag.CommandLine.AddGoFlagSet(flag.CommandLine)
-	pflag.CommandLine.ParseErrorsWhitelist.UnknownFlags = true
+	pflag.CommandLine.ParseErrorsAllowlist.UnknownFlags = true
 	pflag.Parse()
 
 	if path := os.Getenv("BUILD_WORKSPACE_DIRECTORY"); path != "" {

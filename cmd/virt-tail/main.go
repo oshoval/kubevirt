@@ -103,7 +103,7 @@ func (v *VirtTail) tailLogs(location tail.SeekInfo) (*tail.SeekInfo, error) {
 
 func main() {
 	pflag.CommandLine.AddGoFlag(goflag.CommandLine.Lookup("v"))
-	pflag.CommandLine.ParseErrorsWhitelist = pflag.ParseErrorsWhitelist{UnknownFlags: true}
+	pflag.CommandLine.ParseErrorsAllowlist = pflag.ParseErrorsAllowlist{UnknownFlags: true}
 	logFile := pflag.String("logfile", "", "path of the logfile to be streamed")
 	pflag.Parse()
 

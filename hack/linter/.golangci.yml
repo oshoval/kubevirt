@@ -83,7 +83,7 @@ linters:
       require-specific: false # don't require nolint directives to be specific about which linter is being skipped
       allow-unused: false # report any unused nolint directives
     staticcheck:
-      dot-import-whitelist:
+      dot-import-allowlist:
         - github.com/onsi/ginkgo/v2
         - github.com/onsi/gomega
       checks:

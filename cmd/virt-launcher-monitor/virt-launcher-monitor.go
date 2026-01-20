@@ -63,7 +63,7 @@ func main() {
 	uid := pflag.String("uid", "", "UID of the VirtualMachineInstance")
 
 	pflag.CommandLine.AddGoFlag(goflag.CommandLine.Lookup("v"))
-	pflag.CommandLine.ParseErrorsWhitelist = pflag.ParseErrorsWhitelist{UnknownFlags: true}
+	pflag.CommandLine.ParseErrorsAllowlist = pflag.ParseErrorsAllowlist{UnknownFlags: true}
 	pflag.Parse()
 
 	log.InitializeLogging("virt-launcher-monitor")

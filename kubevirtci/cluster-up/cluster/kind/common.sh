@@ -121,9 +121,15 @@ function _configure_overlayfs_mount_options() {
     ${cmd_context} "$(_reload-containerd-daemon-cmd)"
 }
 
- function _overlayfs_volatile_cmd(){
-    echo "sed -i '/^\[plugins\]$/a\  [plugins.\"io.containerd.snapshotter.v1.overlayfs\"]\n    mount_options = [\"volatile\"]' /etc/containerd/config.toml"
- }
+function _overlayfs_volatile_cmd() {
+    echo '
+cat >> /etc/containerd/config.toml <<EOF
+
+[plugins."io.containerd.snapshotter.v1.overlayfs"]
+  mount_options = ["volatile"]
+EOF
+    '
+}
 
 # this works since the nodes use the same names as containers
 function _ssh_into_node() {

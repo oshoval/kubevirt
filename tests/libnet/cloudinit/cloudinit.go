@@ -97,7 +97,10 @@ func WithDHCP6Enabled() NetworkDataInterfaceOption {
 
 func WithGateway6(gateway6 string) NetworkDataInterfaceOption {
 	return func(networkDataInterface *CloudInitInterface) error {
-		networkDataInterface.Gateway6 = gateway6
+		networkDataInterface.Routes = append(networkDataInterface.Routes, CloudInitRoute{
+			To:  "default",
+			Via: gateway6,
+		})
 		return nil
 	}
 }
@@ -138,8 +141,6 @@ type CloudInitInterface struct {
 	DHCP4          *bool                 `json:"dhcp4,omitempty"`
 	DHCP6          *bool                 `json:"dhcp6,omitempty"`
 	DHCPIdentifier string                `json:"dhcp-identifier,omitempty"` // "duid" or  "mac"
-	Gateway4       string                `json:"gateway4,omitempty"`
-	Gateway6       string                `json:"gateway6,omitempty"`
 	Nameservers    *CloudInitNameservers `json:"nameservers,omitempty"`
 	MACAddress     string                `json:"macaddress,omitempty"`
 	Match          CloudInitMatch        `json:"match,omitempty"`

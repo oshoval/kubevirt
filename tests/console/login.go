@@ -238,7 +238,9 @@ func configureConsole(expecter expect.Expecter, shouldSudo bool) error {
 		sudoString = "sudo "
 	}
 	batch := []expect.Batcher{
-		&expect.BSnd{S: "stty cols 500 rows 500\n"},
+		// Disable systemd>=258 shell integration (OSC 3008/8003 sequences)
+		// that breaks goexpect regex matching on Fedora 43+.
+		&expect.BSnd{S: "unset PROMPT_COMMAND PS0; stty cols 500 rows 500\n"},
 		&expect.BExp{R: PromptExpression},
 		&expect.BSnd{S: "echo $?\n"},
 		&expect.BExp{R: RetValueWithPrompt("0")},

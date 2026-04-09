@@ -21,7 +21,9 @@ package dra
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 
@@ -183,9 +185,12 @@ func readMetadataFile(path string) (*metadata.DeviceMetadata, error) {
 // avoids the k8s.io/apimachinery runtime scheme dependency.
 func decodeMetadataFromStream(dec *json.Decoder) (*metadata.DeviceMetadata, error) {
 	var skipped []string
-	for dec.More() {
+	for {
 		var raw json.RawMessage
 		if err := dec.Decode(&raw); err != nil {
+			if errors.Is(err, io.EOF) {
+				break
+			}
 			return nil, fmt.Errorf("read object from metadata stream: %w", err)
 		}
 

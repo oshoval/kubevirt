@@ -141,10 +141,9 @@ func newDecorateHook(iface v1.Interface) func(hostDevice *api.HostDevice) error 
 	}
 }
 
-// CreateDRAHostDevices creates SR-IOV host devices for networks that use DRA (Dynamic Resource Allocation).
-// Unlike traditional SR-IOV which gets PCI addresses from multus network status, DRA-based SR-IOV
-// gets PCI addresses from the VMI device status populated by the DRA controller.
-func CreateDRAHostDevices(vmi *v1.VirtualMachineInstance) ([]api.HostDevice, error) {
+// CreateDRAHostDevices creates SR-IOV host devices for networks that use DRA.
+// PCI addresses are resolved from pod-local DRA metadata files.
+func CreateDRAHostDevices(vmi *v1.VirtualMachineInstance, metadataBasePath string) ([]api.HostDevice, error) {
 	// Find interfaces with SRIOV binding that reference networks with resourceClaim
 	sriovDRAInterfaces := vmispec.FilterInterfacesSpec(vmi.Spec.Domain.Devices.Interfaces, func(iface v1.Interface) bool {
 		if iface.SRIOV == nil {
@@ -158,32 +157,36 @@ func CreateDRAHostDevices(vmi *v1.VirtualMachineInstance) ([]api.HostDevice, err
 		return []api.HostDevice{}, nil
 	}
 
-	if vmi.Status.DeviceStatus == nil {
-		return nil, fmt.Errorf("vmi has DRA SR-IOV interfaces but no device status found")
-	}
-
 	var hostDevices []api.HostDevice
 	for _, iface := range sriovDRAInterfaces {
-		// Find the corresponding device status by interface/network name
-		var deviceStatus *v1.DeviceStatusInfo
-		for i := range vmi.Status.DeviceStatus.HostDeviceStatuses {
-			if vmi.Status.DeviceStatus.HostDeviceStatuses[i].Name == iface.Name {
-				deviceStatus = &vmi.Status.DeviceStatus.HostDeviceStatuses[i]
-				break
-			}
+		network := vmispec.LookupNetworkByName(vmi.Spec.Networks, iface.Name)
+		if network == nil || network.NetworkSource.ResourceClaim == nil {
+			return nil, fmt.Errorf("no DRA network found for SR-IOV interface %s", iface.Name)
 		}
 
-		if deviceStatus == nil {
-			return nil, fmt.Errorf("no device status found for SR-IOV DRA interface %s", iface.Name)
+		claimName := network.NetworkSource.ResourceClaim.ClaimName
+		requestName := network.NetworkSource.ResourceClaim.RequestName
+		if claimName == "" || requestName == "" {
+			return nil, fmt.Errorf("SR-IOV DRA interface %s has empty claimName or requestName", iface.Name)
 		}
 
-		if deviceStatus.DeviceResourceClaimStatus == nil ||
-			deviceStatus.DeviceResourceClaimStatus.Attributes == nil ||
-			deviceStatus.DeviceResourceClaimStatus.Attributes.PCIAddress == nil {
-			return nil, fmt.Errorf("no PCI address found in device status for SR-IOV DRA interface %s", iface.Name)
+		pciAddress, err := drautil.GetPCIAddressForClaim(
+			metadataBasePath,
+			vmi.Spec.ResourceClaims,
+			claimName,
+			requestName,
+		)
+		if err != nil {
+			return nil, fmt.Errorf(
+				"failed to resolve PCI address for SR-IOV DRA interface %s (claim %s request %s): %w",
+				iface.Name,
+				claimName,
+				requestName,
+				err,
+			)
 		}
 
-		hostAddr, err := device.NewPciAddressField(*deviceStatus.DeviceResourceClaimStatus.Attributes.PCIAddress)
+		hostAddr, err := device.NewPciAddressField(pciAddress)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create PCI address for SR-IOV DRA interface %s: %v", iface.Name, err)
 		}

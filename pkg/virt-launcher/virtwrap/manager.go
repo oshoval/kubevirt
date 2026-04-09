@@ -1133,7 +1133,7 @@ func (l *LibvirtDomainManager) generateConverterContext(vmi *v1.VirtualMachineIn
 		}
 
 		// Add DRA-based SR-IOV devices
-		sriovDRADevices, err := sriov.CreateDRAHostDevices(vmi)
+		sriovDRADevices, err := sriov.CreateDRAHostDevices(vmi, drautil.DefaultMetadataBasePath)
 		if err != nil {
 			return nil, err
 		}

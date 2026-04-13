@@ -124,8 +124,7 @@ func NewSriovNetAttachDefWithIPAM(name string, vlanID int, opts ...pluginConfOpt
 	return NewNetAttachDef(name, string(configJSON))
 }
 
-// CreateSRIOVNetworkWithDRA creates both a NetworkAttachmentDefinition and ResourceClaimTemplate
-// This matches the real-world DRA SR-IOV setup with proper VfConfig
+// CreateSRIOVNetworkWithDRA creates a SR-IOV NetworkAttachmentDefinition for DRA-backed networking.
 func CreateSRIOVNetworkWithDRA(ctx context.Context, namespace, networkName, driverName string, vlanID int, opts ...pluginConfOption) error {
 	// Create NetworkAttachmentDefinition with SR-IOV CNI config
 	netAttachDef := NewSriovNetAttachDefWithIPAM(networkName, vlanID, opts...)
@@ -133,16 +132,7 @@ func CreateSRIOVNetworkWithDRA(ctx context.Context, namespace, networkName, driv
 	if err != nil {
 		return err
 	}
-
-	// Create ResourceClaimTemplate that references the NAD
-	template := NewSRIOVResourceClaimTemplate(
-		"single-vf-"+networkName,
-		namespace,
-		networkName,
-		driverName,
-	)
-	_, err = CreateResourceClaimTemplate(ctx, namespace, template)
-	return err
+	return nil
 }
 
 // CreateResourceClaimTemplate creates a ResourceClaimTemplate in the specified namespace
@@ -181,11 +171,23 @@ func DeleteResourceClaim(ctx context.Context, namespace, name string) error {
 	)
 }
 
-// NewSRIOVResourceClaim creates a simple ResourceClaim for SR-IOV network devices (for tests)
-func NewSRIOVResourceClaim(name, driverName, resourceName string, count int) *resourcev1.ResourceClaim {
+// NewSRIOVResourceClaim creates a ResourceClaim for SR-IOV network devices.
+func NewSRIOVResourceClaim(name, namespace, netAttachDefName, driverName string) *resourcev1.ResourceClaim {
+	vfConfig := VfConfigParameters{
+		APIVersion:       "sriovnetwork.k8snetworkplumbingwg.io/v1alpha1",
+		Kind:             "VfConfig",
+		NetAttachDefName: netAttachDefName,
+		Driver:           "vfio-pci",
+		AddVhostMount:    true,
+	}
+
+	vfConfigJSON, err := json.Marshal(vfConfig)
+	ExpectWithOffset(1, err).NotTo(HaveOccurred())
+
 	return &resourcev1.ResourceClaim{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: name,
+			Name:      name,
+			Namespace: namespace,
 		},
 		Spec: resourcev1.ResourceClaimSpec{
 			Devices: resourcev1.DeviceClaim{
@@ -194,7 +196,19 @@ func NewSRIOVResourceClaim(name, driverName, resourceName string, count int) *re
 						Name: "vf",
 						Exactly: &resourcev1.ExactDeviceRequest{
 							DeviceClassName: driverName,
-							Count:           int64(count),
+						},
+					},
+				},
+				Config: []resourcev1.DeviceClaimConfiguration{
+					{
+						Requests: []string{"vf"},
+						DeviceConfiguration: resourcev1.DeviceConfiguration{
+							Opaque: &resourcev1.OpaqueDeviceConfiguration{
+								Driver: driverName,
+								Parameters: runtime.RawExtension{
+									Raw: vfConfigJSON,
+								},
+							},
 						},
 					},
 				},

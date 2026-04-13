@@ -160,6 +160,16 @@ func WithResourceClaimTemplate(claimName, templateName string) Option {
 	}
 }
 
+// WithResourceClaim adds a direct ResourceClaim reference.
+func WithResourceClaim(claimName, resourceClaimName string) Option {
+	return func(vmi *kvirtv1.VirtualMachineInstance) {
+		vmi.Spec.ResourceClaims = append(vmi.Spec.ResourceClaims, k8sv1.PodResourceClaim{
+			Name:              claimName,
+			ResourceClaimName: &resourceClaimName,
+		})
+	}
+}
+
 // WithHostname sets the hostname parameter.
 func WithHostname(hostname string) Option {
 	return func(vmi *kvirtv1.VirtualMachineInstance) {

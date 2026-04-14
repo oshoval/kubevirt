@@ -421,6 +421,98 @@ var _ = Describe("Resource pod spec renderer", func() {
 			Expect(claims[0].Request).To(BeEmpty())
 		})
 
+		It("should collapse Network DRA claims with same name and different requests", func() {
+			networks := []v1.Network{
+				{
+					Name: "dra-net-1",
+					NetworkSource: v1.NetworkSource{
+						ResourceClaim: &v1.ResourceClaimNetworkSource{
+							ClaimName:   "shared-claim",
+							RequestName: "request-a",
+						},
+					},
+				},
+				{
+					Name: "dra-net-2",
+					NetworkSource: v1.NetworkSource{
+						ResourceClaim: &v1.ResourceClaimNetworkSource{
+							ClaimName:   "shared-claim",
+							RequestName: "request-b",
+						},
+					},
+				},
+			}
+
+			rr = NewResourceRenderer(nil, nil, WithNetworksDRA(networks))
+
+			claims := rr.Claims()
+			Expect(claims).To(HaveLen(1))
+			Expect(claims[0].Name).To(Equal("shared-claim"))
+			Expect(claims[0].Request).To(BeEmpty())
+		})
+
+		It("should collapse mixed Network and GPU DRA claims with same name and different requests", func() {
+			gpus := []v1.GPU{
+				{
+					Name: "dra-gpu",
+					ClaimRequest: &v1.ClaimRequest{
+						ClaimName:   pointer.P("shared-claim"),
+						RequestName: pointer.P("gpu-request"),
+					},
+				},
+			}
+
+			networks := []v1.Network{
+				{
+					Name: "dra-net",
+					NetworkSource: v1.NetworkSource{
+						ResourceClaim: &v1.ResourceClaimNetworkSource{
+							ClaimName:   "shared-claim",
+							RequestName: "net-request",
+						},
+					},
+				},
+			}
+
+			rr = NewResourceRenderer(nil, nil, WithGPUsDRA(gpus), WithNetworksDRA(networks))
+
+			claims := rr.Claims()
+			Expect(claims).To(HaveLen(1))
+			Expect(claims[0].Name).To(Equal("shared-claim"))
+			Expect(claims[0].Request).To(BeEmpty())
+		})
+
+		It("should collapse mixed Network and HostDevice DRA claims with same name and different requests", func() {
+			hostDevices := []v1.HostDevice{
+				{
+					Name: "dra-host",
+					ClaimRequest: &v1.ClaimRequest{
+						ClaimName:   pointer.P("shared-claim"),
+						RequestName: pointer.P("hostdev-request"),
+					},
+				},
+			}
+
+			networks := []v1.Network{
+				{
+					Name: "dra-net",
+					NetworkSource: v1.NetworkSource{
+						ResourceClaim: &v1.ResourceClaimNetworkSource{
+							ClaimName:   "shared-claim",
+							RequestName: "net-request",
+						},
+					},
+				},
+			}
+
+			rr = NewResourceRenderer(nil, nil, WithHostDevicesDRA(hostDevices), WithNetworksDRA(networks))
+
+			claims := rr.Claims()
+			Expect(claims).To(HaveLen(1))
+			Expect(claims[0].Name).To(Equal("shared-claim"))
+			Expect(claims[0].Request).To(BeEmpty())
+		})
+
 		It("Unified functions should not interfere with other renderer options", func() {
 			cpuRequest := resource.MustParse("100m")
 			memoryRequest := resource.MustParse("128Mi")

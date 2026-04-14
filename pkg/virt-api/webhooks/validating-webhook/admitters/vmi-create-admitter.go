@@ -578,7 +578,11 @@ func validateNetworkDevicesWithDRA(field *k8sfield.Path, spec *v1.VirtualMachine
 	}
 
 	hasMultusSRIOV := false
+	deviceClaimRequestPairs := collectDRADeviceClaimRequestPairs(spec, config)
 	seen := map[string]bool{}
+	for key := range deviceClaimRequestPairs {
+		seen[key] = true
+	}
 	for idx, net := range spec.Networks {
 		if net.ResourceClaim == nil {
 			if net.Multus != nil {
@@ -615,9 +619,13 @@ func validateNetworkDevicesWithDRA(field *k8sfield.Path, spec *v1.VirtualMachine
 
 		key := net.ResourceClaim.ClaimName + "/" + net.ResourceClaim.RequestName
 		if seen[key] {
+			message := fmt.Sprintf("duplicate claimName/requestName pair %q", key)
+			if _, found := deviceClaimRequestPairs[key]; found {
+				message = fmt.Sprintf("duplicate claimName/requestName pair %q across networks and DRA GPUs/HostDevices", key)
+			}
 			causes = append(causes, metav1.StatusCause{
 				Type:    metav1.CauseTypeFieldValueDuplicate,
-				Message: fmt.Sprintf("duplicate claimName/requestName combination %q", key),
+				Message: message,
 				Field:   field.Child("networks").Index(idx).String(),
 			})
 		}
@@ -633,6 +641,36 @@ func validateNetworkDevicesWithDRA(field *k8sfield.Path, spec *v1.VirtualMachine
 	}
 
 	return causes
+}
+
+func collectDRADeviceClaimRequestPairs(spec *v1.VirtualMachineInstanceSpec, config *virtconfig.ClusterConfig) map[string]struct{} {
+	pairs := map[string]struct{}{}
+
+	if config.GPUsWithDRAGateEnabled() {
+		for _, gpu := range spec.Domain.Devices.GPUs {
+			if !dra.IsGPUDRA(gpu) || gpu.ClaimRequest.ClaimName == nil || gpu.ClaimRequest.RequestName == nil {
+				continue
+			}
+			if *gpu.ClaimRequest.ClaimName == "" || *gpu.ClaimRequest.RequestName == "" {
+				continue
+			}
+			pairs[*gpu.ClaimRequest.ClaimName+"/"+*gpu.ClaimRequest.RequestName] = struct{}{}
+		}
+	}
+
+	if config.HostDevicesWithDRAEnabled() {
+		for _, hostDevice := range spec.Domain.Devices.HostDevices {
+			if !dra.IsHostDeviceDRA(hostDevice) || hostDevice.ClaimRequest.ClaimName == nil || hostDevice.ClaimRequest.RequestName == nil {
+				continue
+			}
+			if *hostDevice.ClaimRequest.ClaimName == "" || *hostDevice.ClaimRequest.RequestName == "" {
+				continue
+			}
+			pairs[*hostDevice.ClaimRequest.ClaimName+"/"+*hostDevice.ClaimRequest.RequestName] = struct{}{}
+		}
+	}
+
+	return pairs
 }
 
 func validateSoundDevices(field *k8sfield.Path, spec *v1.VirtualMachineInstanceSpec) []metav1.StatusCause {

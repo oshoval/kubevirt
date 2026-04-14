@@ -1379,6 +1379,80 @@ var _ = Describe("Validating VMICreate Admitter", func() {
 			Expect(causes[0].Message).To(ContainSubstring("duplicate claimName/requestName"))
 		})
 
+		It("should reject duplicate claimName/requestName across DRA networks and GPUs", func() {
+			enableFeatureGates(featuregate.NetworkDevicesWithDRAGate, featuregate.GPUsWithDRAGate)
+			defer disableFeatureGates()
+			vmi := api.NewMinimalVMI("testvm")
+			vmi.Spec.Networks = []v1.Network{
+				{
+					Name: "dra-net",
+					NetworkSource: v1.NetworkSource{
+						ResourceClaim: &v1.ResourceClaimNetworkSource{
+							ClaimName:   "claim1",
+							RequestName: "vf",
+						},
+					},
+				},
+			}
+			vmi.Spec.Domain.Devices.Interfaces = []v1.Interface{
+				{Name: "dra-net", InterfaceBindingMethod: v1.InterfaceBindingMethod{SRIOV: &v1.InterfaceSRIOV{}}},
+			}
+			vmi.Spec.Domain.Devices.GPUs = []v1.GPU{
+				{
+					Name: "dra-gpu",
+					ClaimRequest: &v1.ClaimRequest{
+						ClaimName:   pointer.P("claim1"),
+						RequestName: pointer.P("vf"),
+					},
+				},
+			}
+			vmi.Spec.ResourceClaims = []k8sv1.PodResourceClaim{
+				{Name: "claim1"},
+			}
+
+			causes := ValidateVirtualMachineInstanceSpec(k8sfield.NewPath("fake"), &vmi.Spec, config)
+			Expect(causes).To(HaveLen(1))
+			Expect(causes[0].Message).To(ContainSubstring("across networks and DRA GPUs/HostDevices"))
+			Expect(causes[0].Field).To(Equal("fake.networks[0]"))
+		})
+
+		It("should reject duplicate claimName/requestName across DRA networks and HostDevices", func() {
+			enableFeatureGates(featuregate.NetworkDevicesWithDRAGate, featuregate.HostDevicesWithDRAGate, featuregate.HostDevicesGate)
+			defer disableFeatureGates()
+			vmi := api.NewMinimalVMI("testvm")
+			vmi.Spec.Networks = []v1.Network{
+				{
+					Name: "dra-net",
+					NetworkSource: v1.NetworkSource{
+						ResourceClaim: &v1.ResourceClaimNetworkSource{
+							ClaimName:   "claim1",
+							RequestName: "vf",
+						},
+					},
+				},
+			}
+			vmi.Spec.Domain.Devices.Interfaces = []v1.Interface{
+				{Name: "dra-net", InterfaceBindingMethod: v1.InterfaceBindingMethod{SRIOV: &v1.InterfaceSRIOV{}}},
+			}
+			vmi.Spec.Domain.Devices.HostDevices = []v1.HostDevice{
+				{
+					Name: "dra-hostdev",
+					ClaimRequest: &v1.ClaimRequest{
+						ClaimName:   pointer.P("claim1"),
+						RequestName: pointer.P("vf"),
+					},
+				},
+			}
+			vmi.Spec.ResourceClaims = []k8sv1.PodResourceClaim{
+				{Name: "claim1"},
+			}
+
+			causes := ValidateVirtualMachineInstanceSpec(k8sfield.NewPath("fake"), &vmi.Spec, config)
+			Expect(causes).To(HaveLen(1))
+			Expect(causes[0].Message).To(ContainSubstring("across networks and DRA GPUs/HostDevices"))
+			Expect(causes[0].Field).To(Equal("fake.networks[0]"))
+		})
+
 		It("should reject mixing Multus-based and DRA-based SR-IOV in the same VMI", func() {
 			enableFeatureGates(featuregate.NetworkDevicesWithDRAGate)
 			defer disableFeatureGates()

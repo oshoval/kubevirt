@@ -83,15 +83,21 @@ func validateCreationDRA(field *k8sfield.Path, spec *v1.VirtualMachineInstanceSp
 	hdCauses, hdClaimNames, hdClaimRequestPairs := validateDRAHostDevices(field, spec.Domain.Devices.HostDevices, checker)
 	causes = append(causes, hdCauses...)
 
-	for key, hdIdx := range hdClaimRequestPairs {
-		if gpuIdx, found := gpuClaimRequestPairs[key]; found {
-			causes = append(causes, metav1.StatusCause{
-				Type:    metav1.CauseTypeFieldValueDuplicate,
-				Message: fmt.Sprintf("duplicate claimName/requestName pair %q between GPUs[%d] and HostDevices[%d]", key, gpuIdx, hdIdx),
-				Field:   field.Child("domain", "devices", "hostDevices").Index(hdIdx).String(),
-			})
-		}
-	}
+	state := newDRAValidationState()
+	causes = append(causes, state.mergeTupleSource(claimRequestTupleSource{
+		sourceType: "GPU",
+		firstByKey: gpuClaimRequestPairs,
+		fieldAt: func(index int) string {
+			return field.Child("domain", "devices", "gpus").Index(index).String()
+		},
+	})...)
+	causes = append(causes, state.mergeTupleSource(claimRequestTupleSource{
+		sourceType: "HostDevice",
+		firstByKey: hdClaimRequestPairs,
+		fieldAt: func(index int) string {
+			return field.Child("domain", "devices", "hostDevices").Index(index).String()
+		},
+	})...)
 
 	allClaimNames := gpuClaimNames.Union(hdClaimNames)
 
@@ -140,6 +146,49 @@ type deviceValidationConfig struct {
 type indexedDevice struct {
 	idx    int
 	device draCapableDevice
+}
+
+type claimRequestPairOwner struct {
+	deviceType string
+	index      int
+}
+
+type claimRequestTupleSource struct {
+	sourceType string
+	firstByKey map[string]int
+	fieldAt    func(index int) string
+}
+
+type draValidationState struct {
+	pairOwnerByKey map[string]claimRequestPairOwner
+}
+
+func newDRAValidationState() *draValidationState {
+	return &draValidationState{
+		pairOwnerByKey: map[string]claimRequestPairOwner{},
+	}
+}
+
+func (s *draValidationState) mergeTupleSource(source claimRequestTupleSource) []metav1.StatusCause {
+	var causes []metav1.StatusCause
+
+	for key, idx := range source.firstByKey {
+		if previous, exists := s.pairOwnerByKey[key]; exists {
+			causes = append(causes, metav1.StatusCause{
+				Type:    metav1.CauseTypeFieldValueDuplicate,
+				Message: fmt.Sprintf("duplicate claimName/requestName pair %q between %ss[%d] and %ss[%d]", key, previous.deviceType, previous.index, source.sourceType, idx),
+				Field:   source.fieldAt(idx),
+			})
+			continue
+		}
+
+		s.pairOwnerByKey[key] = claimRequestPairOwner{
+			deviceType: source.sourceType,
+			index:      idx,
+		}
+	}
+
+	return causes
 }
 
 func validateDRAGPUs(field *k8sfield.Path, gpus []v1.GPU, checker DRAConfigChecker) ([]metav1.StatusCause, sets.Set[string], map[string]int) {

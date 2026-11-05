@@ -19,6 +19,7 @@
 package agentpoller
 
 import (
+	"encoding/json"
 	"math"
 	"sync"
 	"time"
@@ -44,8 +45,10 @@ const (
 	GetFilesystem     AgentCommand = "guest-get-fsinfo"
 	GetAgent          AgentCommand = "guest-info"
 	GetFSFreezeStatus AgentCommand = "guest-fsfreeze-status"
+	GetInterfaces     AgentCommand = "guest-network-get-interfaces"
 
 	pollInitialInterval = 10 * time.Second
+	guestInfoTimeout    = 60 * time.Second
 
 	repeatingLogLevel = 3
 )
@@ -313,13 +316,17 @@ func CreatePoller(
 				CallTick:      qemuAgentFSFreezeStatusInterval,
 				AgentCommands: []AgentCommand{GetFSFreezeStatus},
 			},
-			// Polling for guest info API
+			// Polling for guest info API. Interface data is fetched separately
+			// using a bounded guest-agent command below.
 			{
 				CallTick: qemuAgentSysInterval,
-				InfoTypes: libvirt.DOMAIN_GUEST_INFO_INTERFACES |
-					libvirt.DOMAIN_GUEST_INFO_OS |
+				InfoTypes: libvirt.DOMAIN_GUEST_INFO_OS |
 					libvirt.DOMAIN_GUEST_INFO_HOSTNAME |
 					libvirt.DOMAIN_GUEST_INFO_TIMEZONE,
+			},
+			{
+				CallTick:      qemuAgentSysInterval,
+				AgentCommands: []AgentCommand{GetInterfaces},
 			},
 			{
 				CallTick:  qemuAgentUserInterval,
@@ -413,7 +420,17 @@ func executeAgentCommands(commands []AgentCommand, agentPoller *AgentPoller) {
 	log.Log.V(repeatingLogLevel).Infof("Polling command: %v", commands)
 
 	for _, command := range commands {
-		cmdResult, err := agentPoller.Connection.QemuAgentCommand(`{"execute":"`+string(command)+`"}`, agentPoller.domainName)
+		var cmdResult string
+		var err error
+		if command == GetInterfaces {
+			cmdResult, err = agentPoller.Connection.QemuAgentCommandWithTimeout(
+				`{"execute":"`+string(command)+`"}`,
+				agentPoller.domainName,
+				libvirt.DomainQemuAgentCommandTimeout(guestInfoTimeout/time.Second),
+			)
+		} else {
+			cmdResult, err = agentPoller.Connection.QemuAgentCommand(`{"execute":"`+string(command)+`"}`, agentPoller.domainName)
+		}
 		if err != nil {
 			// skip the command on error, it is not vital
 			continue
@@ -441,8 +458,56 @@ func executeAgentCommands(commands []AgentCommand, agentPoller *AgentPoller) {
 				continue
 			}
 			agentPoller.agentStore.Store(GetAgent, agent)
+		case GetInterfaces:
+			interfaces, err := parseInterfaces(cmdResult)
+			if err != nil {
+				log.Log.Errorf("Cannot parse guest agent interfaces %s", err.Error())
+				continue
+			}
+			agentPoller.agentStore.Store(libvirt.DOMAIN_GUEST_INFO_INTERFACES, interfaces)
 		}
 	}
+}
+
+type guestNetworkInterface struct {
+	Name            string                    `json:"name"`
+	HardwareAddress string                    `json:"hardware-address"`
+	IPAddresses     []guestNetworkInterfaceIP `json:"ip-addresses"`
+}
+
+type guestNetworkInterfaceIP struct {
+	Address string `json:"ip-address"`
+}
+
+func parseInterfaces(data string) ([]api.InterfaceStatus, error) {
+	var response struct {
+		Interfaces []guestNetworkInterface `json:"return"`
+	}
+	if err := json.Unmarshal([]byte(data), &response); err != nil {
+		return nil, err
+	}
+
+	interfaces := make([]api.InterfaceStatus, 0, len(response.Interfaces))
+	for _, iface := range response.Interfaces {
+		if iface.Name == "lo" {
+			continue
+		}
+		ips := make([]string, 0, len(iface.IPAddresses))
+		for _, ip := range iface.IPAddresses {
+			ips = append(ips, ip.Address)
+		}
+		primaryIP := ""
+		if len(ips) > 0 {
+			primaryIP = ips[0]
+		}
+		interfaces = append(interfaces, api.InterfaceStatus{
+			Mac:           iface.HardwareAddress,
+			Ip:            primaryIP,
+			IPs:           ips,
+			InterfaceName: iface.Name,
+		})
+	}
+	return interfaces, nil
 }
 
 func fetchAndStoreGuestInfo(infoTypes libvirt.DomainGuestInfoTypes, agentPoller *AgentPoller) {

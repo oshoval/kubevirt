@@ -331,6 +331,21 @@ func (m *MockConnection) QemuAgentCommand(command, domainName string) (string, e
 	return ret0, ret1
 }
 
+// QemuAgentCommandWithTimeout mocks base method.
+func (m *MockConnection) QemuAgentCommandWithTimeout(command, domainName string, timeout libvirt.DomainQemuAgentCommandTimeout) (string, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "QemuAgentCommandWithTimeout", command, domainName, timeout)
+	ret0, _ := ret[0].(string)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// QemuAgentCommandWithTimeout indicates an expected call of QemuAgentCommandWithTimeout.
+func (mr *MockConnectionMockRecorder) QemuAgentCommandWithTimeout(command, domainName, timeout any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "QemuAgentCommandWithTimeout", reflect.TypeOf((*MockConnection)(nil).QemuAgentCommandWithTimeout), command, domainName, timeout)
+}
+
 // QemuAgentCommand indicates an expected call of QemuAgentCommand.
 func (mr *MockConnectionMockRecorder) QemuAgentCommand(command, domainName any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()

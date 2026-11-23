@@ -48,6 +48,7 @@ class ImageLayout:
     manifest: bytes
     manifest_media_type: str
     blob_media_types: dict[str, str]
+    blob_members: dict[str, tarfile.TarInfo]
 
     def read_blob(
         self, digest: str
@@ -55,13 +56,10 @@ class ImageLayout:
         """Open a blob member in this image archive, if it exists."""
         if not DIGEST_RE.fullmatch(digest):
             return None
-        member_name = f"blobs/sha256/{digest.removeprefix('sha256:')}"
-        archive = tarfile.open(self.archive_path, "r")
-        try:
-            member = archive.getmember(member_name)
-        except KeyError:
-            archive.close()
+        member = self.blob_members.get(digest)
+        if member is None:
             return None
+        archive = tarfile.open(self.archive_path, "r")
         blob = archive.extractfile(member)
         if blob is None:
             archive.close()
@@ -132,6 +130,7 @@ def load_layouts(
                 "mediaType", descriptor.get("mediaType", "application/json")
             )
             blob_media_types = {}
+            blob_members = {}
             for blob in [manifest_data.get("config", {}), *manifest_data.get("layers", [])]:
                 digest = blob.get("digest", "")
                 if not DIGEST_RE.fullmatch(digest):
@@ -141,7 +140,7 @@ def load_layouts(
                 )
                 blob_path = "blobs/sha256/" + digest.removeprefix("sha256:")
                 try:
-                    archive.getmember(blob_path)
+                    blob_members[digest] = archive.getmember(blob_path)
                 except KeyError as error:
                     raise ValueError(
                         f"OCI layout {archive_path} is missing image blob {digest}"
@@ -156,6 +155,7 @@ def load_layouts(
                 manifest=manifest,
                 manifest_media_type=manifest_media_type,
                 blob_media_types=blob_media_types,
+                blob_members=blob_members,
             )
         )
     if not images:

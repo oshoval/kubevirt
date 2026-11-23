@@ -193,6 +193,11 @@ cluster-deploy: cluster-clean
 cluster-sync:
 	./hack/cluster-sync.sh
 
+cluster-resync:
+	PUSH_TARGETS="$(strip $(if $(images),$(images),$(PUSH_TARGETS)))" \
+	USE_HINTS="$(if $(use_hints),$(use_hints),$(if $(USE_HINTS),$(USE_HINTS),true))" \
+	./hack/cluster_resync.py
+
 cluster-sync-registry-stop:
 	hack/dockerized "./hack/cluster-sync-registry.sh stop"
 
@@ -308,6 +313,7 @@ rpm-mirror-checker:
 	cluster-clean \
 	cluster-deploy \
 	cluster-sync \
+	cluster-resync \
 	cluster-sync-registry-stop \
 	cluster-sync-registry-test \
 	olm-verify \

@@ -96,16 +96,22 @@ if [[ "${BAZEL_IMAGE_REGISTRY:-}" == "1" ]]; then
         exit 2
     fi
 
-    targets=("${PUSH_TARGETS[@]}" virt-template-apiserver virt-template-controller)
+    registry_targets=("${PUSH_TARGETS[@]}")
+    build_targets=("${PUSH_TARGETS[@]}")
+    if [[ "${BAZEL_IMAGE_REGISTRY_BUILD_SELECTED_ONLY:-}" == "1" ]]; then
+        registry_targets=(${default_targets})
+        build_targets=("${PUSH_TARGETS[@]}")
+    fi
+    registry_targets+=(virt-template-apiserver virt-template-controller)
     push_query_targets=()
-    for target in "${targets[@]}"; do
+    for target in "${registry_targets[@]}"; do
         push_query_targets+=("//:push-${target}")
     done
     query_output=$(bazel query --output=build "set(${push_query_targets[*]})")
 
-    image_labels=()
+    build_image_labels=()
     image_specs=()
-    for target in "${targets[@]}"; do
+    for target in "${registry_targets[@]}"; do
         image_label=$(printf '%s\n' "${query_output}" |
             sed -n "/name = \"push-${target}\"/,/^)/{s/^[[:space:]]*image = \"\([^\"]*\)\".*/\1/p;}" |
             head -n1)
@@ -113,7 +119,12 @@ if [[ "${BAZEL_IMAGE_REGISTRY:-}" == "1" ]]; then
             echo "Unable to find image target for //:push-${target}" >&2
             exit 1
         fi
-        image_labels+=("${image_label}")
+        for build_target in "${build_targets[@]}"; do
+            if [[ "${target}" == "${build_target}" ]]; then
+                build_image_labels+=("${image_label}")
+                break
+            fi
+        done
         image_tag=${docker_tag}
         if [[ "${target}" == virt-template-* ]]; then
             image_tag=${VIRT_TEMPLATE_VERSION:-v0.3.0}
@@ -123,13 +134,15 @@ if [[ "${BAZEL_IMAGE_REGISTRY:-}" == "1" ]]; then
         image_specs+=("${target}@${image_tag}=${image_label}")
     done
 
-    bazel build \
-        --config="${ARCHITECTURE}" ${BAZEL_CS_CONFIG} \
-        --output_groups=oci_tarball \
-        --define container_prefix= \
-        --define image_prefix= \
-        --define container_tag= \
-        "${image_labels[@]}"
+    if [[ ${#build_image_labels[@]} -gt 0 ]]; then
+        bazel build \
+            --config="${ARCHITECTURE}" ${BAZEL_CS_CONFIG} \
+            --output_groups=oci_tarball \
+            --define container_prefix= \
+            --define image_prefix= \
+            --define container_tag= \
+            "${build_image_labels[@]}"
+    fi
 
     registry_args=(
         --listen-address "${BAZEL_REGISTRY_LISTEN_ADDRESS:-0.0.0.0}"
@@ -147,6 +160,10 @@ if [[ "${BAZEL_IMAGE_REGISTRY:-}" == "1" ]]; then
         package=${label_path%%:*}
         image_target=${label_path##*:}
         layout="bazel-bin/${package}/${image_target}_oci_layout.tar"
+        if [[ ! -f "${layout}" ]]; then
+            echo "Missing cached Bazel image layout ${layout}; run no-push cluster-sync first" >&2
+            exit 1
+        fi
         registry_args+=(--image "${target}@${image_tag}=${layout}")
     done
 

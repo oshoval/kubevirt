@@ -81,4 +81,10 @@ the VMI's pod and receives lifecycle commands from virt-handler.
    location = "192.168.1.10:5001"
    insecure = true
    ```
+
+   Once the cluster uses this Bazel registry, `make cluster-resync` compares
+   running workload image digests with Bazel and restarts only changed
+   workloads. It builds only selected image targets and refreshes the registry
+   from the full cached image set. Select images with, for example,
+   `make cluster-resync images="virt-api virt-controller"`.
  * `make cluster-down`: This will tear down a running KubeVirt environment.
